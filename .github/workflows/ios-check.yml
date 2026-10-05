@@ -76,6 +76,9 @@ jobs:
               with (app / 'PrivacyInfo.xcprivacy').open('rb') as f:
                   privacy = plistlib.load(f)
               assert privacy['NSPrivacyTracking'] is False
+              reasons = {item['NSPrivacyAccessedAPIType']: item['NSPrivacyAccessedAPITypeReasons']
+                         for item in privacy['NSPrivacyAccessedAPITypes']}
+              assert '35F9.1' in reasons['NSPrivacyAccessedAPICategorySystemBootTime']
               print(target, 'identity, capture permission text and app privacy manifest verified')
           PY
       - uses: actions/upload-artifact@v4
