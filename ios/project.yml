@@ -1,0 +1,52 @@
+name: NabcamIOS
+options:
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+packages:
+  NabcamCore:
+    path: Core
+  HaishinKit:
+    url: https://github.com/HaishinKit/HaishinKit.swift.git
+    exactVersion: 2.2.4
+targets:
+  NabcamIOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: NabcamIOS
+    info:
+      path: build/Info.plist
+      properties:
+        CFBundleDisplayName: NABCAM IRL
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSCameraUsageDescription: NABCAM IRL uses your camera for the preview and live broadcasts you start.
+        NSMicrophoneUsageDescription: NABCAM IRL uses your microphone for live broadcasts you start.
+        NSLocalNetworkUsageDescription: Connect to a streaming receiver on your local network when you choose its address.
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationLandscapeRight
+    dependencies:
+      - package: NabcamCore
+      - package: HaishinKit
+        product: HaishinKit
+      - package: HaishinKit
+        product: RTMPHaishinKit
+      - package: HaishinKit
+        product: SRTHaishinKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.app
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: false
+schemes:
+  NabcamIOS:
+    build:
+      targets:
+        NabcamIOS: all

@@ -1,0 +1,16 @@
+.DS_Store
+.idea/
+.env
+.env.*
+*.p8
+*.p12
+*.pfx
+*.mobileprovision
+*.keystore
+*.jks
+*.ipa
+*.xcarchive/
+build/
+DerivedData/
+.build/
+.swiftpm/
