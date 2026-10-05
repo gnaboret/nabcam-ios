@@ -67,7 +67,16 @@ try {
     $builds = @( (Apple "builds?filter[app]=$($apps[0].id)&sort=-uploadedDate&limit=5").data )
     Write-Host "Verified app: $($apps[0].attributes.name), bundle $bundle, app ID $($apps[0].id)"
     Write-Host "Matching distribution certificate: $($certificates[0].id); existing build count (up to five): $($builds.Count)"
-    foreach ($build in $builds) { Write-Host "Build $($build.attributes.version): $($build.attributes.processingState)" }
+    foreach ($build in $builds) {
+        Write-Host "Build $($build.attributes.version): $($build.attributes.processingState)"
+        $beta = (Apple "builds/$($build.id)/buildBetaDetail").data.attributes
+        Write-Host "TestFlight: internal=$($beta.internalBuildState); external=$($beta.externalBuildState)"
+    }
+    $groups = @( (Apple "betaGroups?filter[app]=$($apps[0].id)&limit=200").data )
+    Write-Host "TestFlight groups: $($groups.Count)"
+    foreach ($group in $groups) {
+        Write-Host "Group: $($group.attributes.name); internal=$($group.attributes.isInternalGroup)"
+    }
     if (-not $Configure) { Write-Host 'Read-only inspection complete. No credentials uploaded.'; exit 0 }
     # Never use the other app's profile, even though the team identity is shared.
     $bundleId = $bundles[0].id
