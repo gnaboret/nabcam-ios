@@ -98,7 +98,10 @@ final class SettingsUITests: XCTestCase {
         }
         attach("preview-hub-settings-on-left", app: app)
         settings.tap()
-        XCTAssertTrue(hubSwap.waitForExistence(timeout: 5))
+        // Reopening starts at the top. SwiftUI's lazy Form need not expose a
+        // lower switch until scrolled into view on a compact landscape phone.
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
+        XCTAssertTrue(form.waitForExistence(timeout: 10))
         for _ in 0..<8 {
             if fullyVisible(fps, in: app, form: form) { break }
             scroll(form, toward: fps)
