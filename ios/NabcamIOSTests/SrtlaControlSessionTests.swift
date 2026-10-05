@@ -72,6 +72,26 @@ final class SrtlaControlSessionTests: XCTestCase {
         XCTAssertTrue(session.snapshot().isEmpty)
     }
 
+    func testSilentInitialSocketIsReplacedAndNewSocketRegisters() async throws {
+        let listening = expectation(description: "Receiver ignores first UDP flow")
+        let receiver = try ControlReceiver(silentConnections: 1) { listening.fulfill() }
+        defer { receiver.close() }
+        receiver.start()
+        await fulfillment(of: [listening], timeout: 5)
+        let port = try XCTUnwrap(receiver.port)
+        let session = try SrtlaControlSession(endpoint: SrtlaEndpoint("127.0.0.1:\(port)"), interfaces: [.automatic])
+        defer { session.close() }
+        session.start()
+        for _ in 0..<300 {
+            if session.snapshot().first?.state == .registered { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(session.snapshot().first?.state, .registered)
+        XCTAssertEqual(session.relaySnapshot().socketReplacements, 1)
+        XCTAssertEqual(receiver.stats.connections, 2)
+        XCTAssertEqual(session.snapshot().first?.id, 2, "Old socket IDs must not be reused")
+    }
+
     func testPacedRelayForwardsUnchangedMediaAndOnlyMatchingSRTReplies() async throws {
         let listening = expectation(description: "Mock SRTLA receiver ready")
         let callerReady = expectation(description: "Local SRT caller ready")
@@ -148,6 +168,7 @@ private final class ControlReceiver: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.gnabcamirl.tests.control-receiver")
     private let lock = NSLock()
     private let reject: Bool
+    private let silentConnections: Int
     private var sockets: [NWConnection] = []
     private var group: Data?
     private var counters = Stats()
@@ -157,8 +178,9 @@ private final class ControlReceiver: @unchecked Sendable {
     var port: UInt16? { listener.port?.rawValue }
     var stats: Stats { lock.lock(); defer { lock.unlock() }; return counters }
 
-    init(reject: Bool = false, ready: @escaping @Sendable () -> Void) throws {
+    init(reject: Bool = false, silentConnections: Int = 0, ready: @escaping @Sendable () -> Void) throws {
         self.reject = reject
+        self.silentConnections = silentConnections
         let parameters = NWParameters.udp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
@@ -193,6 +215,7 @@ private final class ControlReceiver: @unchecked Sendable {
     private func replies(to packet: Data, from socket: NWConnection) -> [Data] {
         lock.lock(); defer { lock.unlock() }
         guard !stopped else { return [] }
+        if let index = sockets.firstIndex(where: { $0 === socket }), index < silentConnections { return [] }
         switch SrtlaWire.type(packet) {
         case SrtlaWire.reg1 where packet.count == 258:
             counters.groupRequests += 1

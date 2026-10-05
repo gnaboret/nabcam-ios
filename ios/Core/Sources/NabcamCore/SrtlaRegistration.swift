@@ -40,6 +40,7 @@ public struct SrtlaRegistration: Sendable {
         if owner == id { owner = nil }
     }
     public func isRegistered(_ id: UInt64) -> Bool { paths[id]?.registered == true }
+    public func retryDeadline(_ id: UInt64) -> Int64 { paths[id]?.retryAfter ?? 0 }
     public func isCoolingDown(_ id: UInt64, at time: Int64) -> Bool {
         guard time >= lastTime, let path = paths[id] else { return false }
         return time < path.retryAfter

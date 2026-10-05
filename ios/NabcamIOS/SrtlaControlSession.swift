@@ -30,8 +30,9 @@ final class SrtlaControlSession: @unchecked Sendable {
         let overflowPackets: UInt64
         let rejectedReplies: UInt64
         let localReplyDrops: UInt64
+        let socketReplacements: UInt64
     }
-    enum SetupError: Error { case invalidPathCount, invalidPacingRate, randomSourceUnavailable }
+    enum SetupError: Error { case invalidPathCount, invalidPacingRate, randomSourceUnavailable, identityExhausted }
     private struct Path {
         let socket: SrtlaDatagramPath
         let interface: Interface
@@ -44,6 +45,8 @@ final class SrtlaControlSession: @unchecked Sendable {
         var window = 8.0
         var lastMediaSend: Int64?
         var retryAfter: Int64 = 0
+        var serverRetryAfter: Int64 = 0
+        var recovery = SrtlaSocketRecovery()
     }
 
     // All mutable session state belongs to this queue. Socket callbacks synchronously
@@ -64,6 +67,8 @@ final class SrtlaControlSession: @unchecked Sendable {
     private var controlOverflow: UInt64 = 0
     private var rejectedReplies: UInt64 = 0
     private var localReplyDrops: UInt64 = 0
+    private var nextPathID: UInt64 = 0
+    private var socketReplacements: UInt64 = 0
     private var started = false
     private var closed = false
 
@@ -89,18 +94,9 @@ final class SrtlaControlSession: @unchecked Sendable {
                     local?.start()
                 } catch { closeOnQueue(); return }
             }
-            for (index, interface) in interfaces.enumerated() {
-                let id = UInt64(index + 1)
+            for interface in interfaces {
                 do {
-                    let socket = try SrtlaDatagramPath(host: endpoint.host, port: endpoint.port,
-                                                      interface: interface.networkType) { [weak self] event in
-                        guard let self else { return }
-                        self.queue.sync { self.receive(event, on: id) }
-                    }
-                    paths[id] = Path(socket: socket, interface: interface)
-                    // A waiting socket is not allowed to become registration owner.
-                    // Add it to the state machine only after NWConnection is ready.
-                    socket.start()
+                    try openPath(interface: interface)
                 } catch {
                     closeOnQueue()
                     return
@@ -145,7 +141,8 @@ final class SrtlaControlSession: @unchecked Sendable {
                           queuedBytes: pacer.queuedBytes + controls.reduce(0) { $0 + $1.count },
                           oldestMilliseconds: pacer.oldestAge(at: Self.now()),
                           overflowPackets: pacer.overflowPackets &+ controlOverflow,
-                          rejectedReplies: rejectedReplies, localReplyDrops: localReplyDrops)
+                          rejectedReplies: rejectedReplies, localReplyDrops: localReplyDrops,
+                          socketReplacements: socketReplacements)
         }
     }
 
@@ -172,6 +169,7 @@ final class SrtlaControlSession: @unchecked Sendable {
             do { try registration.addPath(id) }
             catch { closeOnQueue(); return }
             paths[id]?.state = .ready
+            paths[id]?.recovery.ready(at: Self.now())
             pacer.rebase(at: Self.now())
             poll()
         case .waiting:
@@ -182,9 +180,13 @@ final class SrtlaControlSession: @unchecked Sendable {
         case .failed, .closed:
             registration.removePath(id)
             paths[id]?.state = .failed
+            paths[id]?.recovery.failed(at: Self.now())
         case .datagram(let bytes):
             let now = Self.now()
             send(registration.receive(bytes, on: id, at: now))
+            let deadline = max(paths[id]?.serverRetryAfter ?? 0, registration.retryDeadline(id))
+            paths[id]?.serverRetryAfter = deadline
+            paths[id]?.recovery.received(at: now, registered: registration.isRegistered(id))
             let acks = SrtlaWire.acknowledgements(bytes)
             if registration.isRegistered(id), !acks.isEmpty {
                 registration.noteValidatedActivity(on: id, at: now)
@@ -216,7 +218,46 @@ final class SrtlaControlSession: @unchecked Sendable {
         }
         send(registration.poll(at: Self.now()))
         for id in paths.keys { paths[id]?.flight.expire(at: Self.now()) }
+        recoverSockets()
         drain()
+    }
+
+    private func openPath(interface: Interface, history: SrtlaSocketRecovery = SrtlaSocketRecovery()) throws {
+        guard nextPathID < UInt64.max else { throw SetupError.identityExhausted }
+        nextPathID += 1
+        let id = nextPathID
+        let socket = try SrtlaDatagramPath(host: endpoint.host, port: endpoint.port,
+                                         interface: interface.networkType) { [weak self] event in
+            guard let self else { return }
+            self.queue.sync { self.receive(event, on: id) }
+        }
+        var recovery = history
+        recovery.opened(at: Self.now())
+        paths[id] = Path(socket: socket, interface: interface, recovery: recovery)
+        // Waiting interfaces cannot own initial registration. Every replacement
+        // gets a new ID so late replies/completions cannot revive an old socket.
+        socket.start()
+    }
+
+    private func recoverSockets() {
+        let now = Self.now()
+        for id in Array(paths.keys) {
+            guard let path = paths[id] else { continue }
+            let deadline = max(path.serverRetryAfter, registration.retryDeadline(id))
+            guard path.recovery.shouldReplace(at: now, registered: registration.isRegistered(id),
+                                              socketReady: path.state == .ready, serverRetryAfter: deadline) else { continue }
+            var history = path.recovery
+            history.replacing(at: now)
+            registration.removePath(id)
+            paths.removeValue(forKey: id)
+            path.socket.close()
+            do { try openPath(interface: path.interface, history: history) }
+            catch { closeOnQueue(); return }
+            socketReplacements &+= 1
+            // Keep originals, repairs and their timestamps. SRT owns recovery of
+            // packets already written to a failed link; this only resets burst credit.
+            pacer.rebase(at: Self.now())
+        }
     }
 
     private func send(_ transmissions: [SrtlaRegistration.Transmission]) {
