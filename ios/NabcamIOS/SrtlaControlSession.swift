@@ -12,17 +12,19 @@ final class SrtlaControlSession: @unchecked Sendable {
             switch self { case .wifi: .wifi; case .cellular: .cellular; case .automatic: nil }
         }
     }
-    enum State: Sendable { case connecting, ready, waiting, failed, registered }
+    enum State: Sendable { case connecting, ready, waiting, failed, registered, cooldown }
     struct PathSnapshot: Sendable {
         let id: UInt64
         let interface: Interface
         let state: State
+        let controlPacketsAdmitted: UInt64
     }
     enum SetupError: Error { case invalidPathCount, randomSourceUnavailable }
     private struct Path {
         let socket: SrtlaDatagramPath
         let interface: Interface
         var state: State = .connecting
+        var controlPacketsAdmitted: UInt64 = 0
     }
 
     // All mutable session state belongs to this queue. Socket callbacks synchronously
@@ -77,8 +79,12 @@ final class SrtlaControlSession: @unchecked Sendable {
         queue.sync {
             paths.keys.sorted().compactMap { id in
                 guard let path = paths[id] else { return nil }
-                let state: State = path.state == .ready && registration.isRegistered(id) ? .registered : path.state
-                return PathSnapshot(id: id, interface: path.interface, state: state)
+                let state: State
+                if path.state == .ready && registration.isRegistered(id) { state = .registered }
+                else if path.state == .ready && registration.isCoolingDown(id, at: Self.now()) { state = .cooldown }
+                else { state = path.state }
+                return PathSnapshot(id: id, interface: path.interface, state: state,
+                                    controlPacketsAdmitted: path.controlPacketsAdmitted)
             }
         }
     }
@@ -135,7 +141,7 @@ final class SrtlaControlSession: @unchecked Sendable {
             guard let path = paths[transmission.path], path.state == .ready else { continue }
             // OS submission is not a server acknowledgment. Failed admission leaves
             // the state machine to retry on its normal bounded control interval.
-            path.socket.send(transmission.bytes)
+            if path.socket.send(transmission.bytes) { paths[transmission.path]?.controlPacketsAdmitted &+= 1 }
         }
     }
 

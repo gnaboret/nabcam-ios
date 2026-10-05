@@ -48,13 +48,19 @@ final class SrtlaControlSessionTests: XCTestCase {
         defer { session.close() }
         session.start()
         for _ in 0..<100 {
-            if receiver.stats.groupRequests > 0 { break }
+            if session.snapshot().first?.state == .cooldown { break }
             try await Task.sleep(for: .milliseconds(50))
         }
-        XCTAssertEqual(receiver.stats.groupRequests, 1)
+        XCTAssertEqual(session.snapshot().first?.state, .cooldown)
+        XCTAssertGreaterThanOrEqual(receiver.stats.groupRequests, 1)
+        // A busy runner may send a scheduled retry BEFORE the server's rejection
+        // reaches the client. Count from processed rejection, not first request.
+        let admittedAfterRejection = session.snapshot().first?.controlPacketsAdmitted
         try await Task.sleep(for: .milliseconds(1200))
         XCTAssertFalse(session.snapshot().contains { $0.state == .registered })
-        XCTAssertEqual(receiver.stats.groupRequests, 1, "Server rejection cooldown must not be bypassed")
+        XCTAssertEqual(session.snapshot().first?.state, .cooldown)
+        XCTAssertEqual(session.snapshot().first?.controlPacketsAdmitted, admittedAfterRejection,
+                       "Server rejection cooldown must not be bypassed")
     }
 
     func testCloseBeforeStartAndInvalidPathCounts() throws {

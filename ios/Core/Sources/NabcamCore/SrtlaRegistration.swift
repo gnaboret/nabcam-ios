@@ -40,6 +40,10 @@ public struct SrtlaRegistration: Sendable {
         if owner == id { owner = nil }
     }
     public func isRegistered(_ id: UInt64) -> Bool { paths[id]?.registered == true }
+    public func isCoolingDown(_ id: UInt64, at time: Int64) -> Bool {
+        guard time >= lastTime, let path = paths[id] else { return false }
+        return time < path.retryAfter
+    }
 
     public mutating func poll(at time: Int64) -> [Transmission] {
         guard acceptTime(time), !needsNewGroup else { return [] }
