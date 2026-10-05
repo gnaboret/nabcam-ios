@@ -36,6 +36,8 @@ final class SettingsUITests: XCTestCase {
         let cameraUnavailable = app.staticTexts["capture-status"].label == "Camera unavailable"
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
+        let microphoneFrame = app.buttons["MIC ON"].frame
+        let cameraFrame = app.buttons["SELFIE"].frame
         settings.tap()
         if app.alerts.buttons["OK"].waitForExistence(timeout: 3) {
             app.alerts.buttons["OK"].tap()
@@ -44,6 +46,25 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
         let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10))
+        let hubSwap = app.switches["hub-swap-toggle"]
+        XCTAssertTrue(fullyVisible(hubSwap, in: app, form: form))
+        XCTAssertEqual(hubSwap.value as? String, "0")
+        setSwitch(hubSwap, to: "1", app: app, name: "hub")
+        app.buttons["Done"].tap()
+        let hud = app.descendants(matching: .any).matching(identifier: "status-hud").firstMatch
+        XCTAssertTrue(hud.waitForExistence(timeout: 5))
+        XCTAssertLessThan(settings.frame.maxX, hud.frame.minX)
+        XCTAssertEqual(app.buttons["MIC ON"].frame, microphoneFrame)
+        XCTAssertEqual(app.buttons["SELFIE"].frame, cameraFrame)
+        attach("preview-hub-settings-on-left", app: app)
+        settings.tap()
+        XCTAssertTrue(hubSwap.waitForExistence(timeout: 5))
+        setSwitch(hubSwap, to: "0", app: app, name: "hub")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(hud.waitForExistence(timeout: 5))
+        XCTAssertLessThan(hud.frame.maxX, settings.frame.minX)
+        settings.tap()
+        XCTAssertTrue(form.waitForExistence(timeout: 5))
         attach("settings-camera", app: app)
         if cameraUnavailable {
             XCTAssertFalse(app.switches["Lock focus"].exists)
@@ -136,7 +157,7 @@ final class SettingsUITests: XCTestCase {
         add(hierarchy)
     }
 
-    private func setSwitch(_ row: XCUIElement, to value: String, app: XCUIApplication) {
+    private func setSwitch(_ row: XCUIElement, to value: String, app: XCUIApplication, name: String = "srtla") {
         XCTAssertTrue(row.isEnabled)
         // SwiftUI exposes both a full-width labelled switch row and the actual
         // trailing UISwitch. Tapping the row's centre may hit only its label.
@@ -145,7 +166,7 @@ final class SettingsUITests: XCTestCase {
         else { row.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: row)
         let result = XCTWaiter.wait(for: [changed], timeout: 5)
-        attach("settings-srtla-after-toggle-\(value)", app: app)
+        attach("settings-\(name)-after-toggle-\(value)", app: app)
         XCTAssertEqual(result, .completed)
         XCTAssertEqual(row.value as? String, value)
     }

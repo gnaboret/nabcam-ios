@@ -24,6 +24,7 @@ struct BroadcastView: View {
     @State private var audioBitrate: AudioBitrate = .kbps96
     @State private var chatChannel = ""
     @State private var importWatermark = false
+    @AppStorage("hub.settingsOnLeft") private var settingsOnLeft = false
 
     var body: some View {
         ZStack {
@@ -31,26 +32,15 @@ struct BroadcastView: View {
             CapturePreview(model: model).ignoresSafeArea()
             VStack {
                 HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("GNAB CAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
-                        Text(model.status).font(.caption).foregroundStyle(model.isLive ? nabGreen : .white)
-                            .accessibilityIdentifier("capture-status")
-                        if let capture = model.captureFPS, let mixed = model.mixedFPS {
-                            Text(String(format: "Camera %.1f · Output %.1f FPS", capture, mixed))
-                                .font(.caption.monospacedDigit()).foregroundStyle(.white)
-                        }
-                        if let paths = model.relayPathStatus {
-                            Text(paths).font(.caption2).foregroundStyle(.white)
-                        }
-                        if let traffic = model.relayTrafficStatus {
-                            Text(traffic).font(.caption2.monospacedDigit()).foregroundStyle(.white)
-                                .accessibilityLabel("Local UDP send rate and relay acknowledgment timing: \(traffic)")
-                        }
+                    if settingsOnLeft {
+                        settingsButton
+                        Spacer()
+                        statusHUD
+                    } else {
+                        statusHUD
+                        Spacer()
+                        settingsButton
                     }
-                    .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
-                    Spacer()
-                    Button { showSettings = true } label: { Image(systemName: "gearshape.fill").frame(width: 48, height: 48) }
-                        .foregroundStyle(.black).background(nabPurple, in: Circle()).accessibilityLabel("Settings")
                 }
                 Spacer()
                 if chat.isEnabled {
@@ -115,6 +105,12 @@ struct BroadcastView: View {
         .fullScreenCover(isPresented: $showSettings) {
             NavigationStack {
                 Form {
+                    Section("Hub") {
+                        Toggle("Settings on left", isOn: $settingsOnLeft)
+                            .accessibilityIdentifier("hub-swap-toggle")
+                        Text("Swaps only the purple Settings button and status panel. Chat and camera controls stay put. Saved on this device.")
+                            .font(.caption).foregroundStyle(nabPurple)
+                    }
                     Section("Camera") {
                         Toggle("Mirror front camera", isOn: Binding(get: { model.mirrorFrontCamera }, set: { value in
                             Task { await model.setFrontCameraMirrored(value) }
@@ -317,6 +313,35 @@ struct BroadcastView: View {
         .alert("GNAB CAM IRL", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
+    }
+
+    private var settingsButton: some View {
+        Button { showSettings = true } label: {
+            Image(systemName: "gearshape.fill").frame(width: 48, height: 48)
+        }
+        .foregroundStyle(.black).background(nabPurple, in: Circle()).accessibilityLabel("Settings")
+    }
+
+    private var statusHUD: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("GNAB CAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
+            Text(model.status).font(.caption).foregroundStyle(model.isLive ? nabGreen : .white)
+                .accessibilityIdentifier("capture-status")
+            if let capture = model.captureFPS, let mixed = model.mixedFPS {
+                Text(String(format: "Camera %.1f · Output %.1f FPS", capture, mixed))
+                    .font(.caption.monospacedDigit()).foregroundStyle(.white)
+            }
+            if let paths = model.relayPathStatus {
+                Text(paths).font(.caption2).foregroundStyle(.white)
+            }
+            if let traffic = model.relayTrafficStatus {
+                Text(traffic).font(.caption2.monospacedDigit()).foregroundStyle(.white)
+                    .accessibilityLabel("Local UDP send rate and relay acknowledgment timing: \(traffic)")
+            }
+        }
+        .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("status-hud")
     }
 
     private func saveConnection() {
