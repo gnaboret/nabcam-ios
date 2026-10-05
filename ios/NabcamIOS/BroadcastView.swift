@@ -46,7 +46,7 @@ struct BroadcastView: View {
                     Button(model.isMuted ? "MIC OFF" : "MIC ON") { Task { await model.toggleMute() } }
                         .disabled(!model.isReady || model.isBusy)
                     if model.hasTorch {
-                        Button { model.toggleTorch() } label: {
+                        Button { Task { await model.toggleTorch() } } label: {
                             Image(systemName: model.isTorchOn ? "flashlight.on.fill" : "flashlight.off.fill")
                         }.accessibilityLabel(model.isTorchOn ? "Turn flashlight off" : "Turn flashlight on")
                             .disabled(!model.isReady || model.isBusy)
@@ -79,7 +79,7 @@ struct BroadcastView: View {
                     Section("Camera") {
                         if model.maximumZoom > model.minimumZoom {
                             LabeledContent("Zoom", value: String(format: "%.1f×", model.zoom))
-                            Slider(value: Binding(get: { model.zoom }, set: { model.setZoom($0) }),
+                            Slider(value: Binding(get: { model.zoom }, set: { value in Task { await model.setZoom(value) } }),
                                    in: model.minimumZoom...model.maximumZoom)
                                 .accessibilityLabel("Camera zoom")
                                 .disabled(!model.isReady || model.isBusy)
@@ -88,7 +88,7 @@ struct BroadcastView: View {
                         } else { Text("Zoom is unavailable on this camera.").font(.caption) }
                         if model.hasTorch {
                             Toggle("Flashlight", isOn: Binding(get: { model.isTorchOn }, set: { value in
-                                if value != model.isTorchOn { model.toggleTorch() }
+                                if value != model.isTorchOn { Task { await model.toggleTorch() } }
                             })).disabled(!model.isReady || model.isBusy)
                         } else { Text("This camera has no flashlight.").font(.caption) }
                     }
