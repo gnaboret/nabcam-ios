@@ -33,6 +33,7 @@ final class SettingsUITests: XCTestCase {
         if app.alerts.buttons["OK"].exists { app.alerts.buttons["OK"].tap() }
         // Simulator capture may be unavailable; acknowledge the real error rather
         // than replacing production capture with a fake-success test mode.
+        let cameraUnavailable = app.staticTexts["capture-status"].label == "Camera unavailable"
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         settings.tap()
@@ -44,7 +45,7 @@ final class SettingsUITests: XCTestCase {
         let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10))
         attach("settings-camera", app: app)
-        if app.staticTexts["capture-status"].label == "Camera unavailable" {
+        if cameraUnavailable {
             XCTAssertFalse(app.switches["Lock focus"].exists)
             XCTAssertFalse(app.switches["Lock exposure"].exists)
         }
