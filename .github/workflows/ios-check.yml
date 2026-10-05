@@ -47,9 +47,18 @@ jobs:
         working-directory: ios
         run: |
           if ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
-          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
-          FIXTURE_CONTAINER=$(xcrun simctl get_app_container "$SIMULATOR_ID" com.gnabcamirl.storage-host data)
-          cp "$FIXTURE_CONTAINER/Documents/srtla-av-format-change.ts" build/srtla-av-format-change.ts
+          xcrun xcresulttool export attachments --path build/storage-results.xcresult --output-path build/receiver-attachments
+          python3 - <<'PY'
+          import json, pathlib, shutil
+          root = pathlib.Path('build/receiver-attachments')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          matches = [a for test in manifest for a in test.get('attachments', [])
+                     if a.get('suggestedHumanReadableName', '').startswith('srtla-av-format-change.ts')]
+          assert len(matches) == 1, 'Expected exactly one synthetic receiver recording'
+          source = (root / matches[0]['exportedFileName']).resolve(strict=True)
+          assert source.parent == root.resolve() and 0 < source.stat().st_size <= 2 * 1024 * 1024
+          shutil.copyfile(source, 'build/srtla-av-format-change.ts')
+          PY
           python3 scripts/verify_av_fixture.py build/srtla-av-format-change.ts
       - name: Exercise Settings UI and capture screenshots
         working-directory: ios

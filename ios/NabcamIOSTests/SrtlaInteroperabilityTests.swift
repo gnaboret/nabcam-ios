@@ -174,9 +174,10 @@ final class SrtlaInteroperabilityTests: XCTestCase {
                 // from the phone. CI decodes the receiver's actual TS bytes.
                 let recording = try XCTUnwrap(server.fixtureRecording())
                 XCTAssertFalse(received.recordingOverflow)
-                let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                try recording.write(to: directory.appendingPathComponent("srtla-av-format-change.ts"), options: .atomic)
+                let attachment = XCTAttachment(data: recording, uniformTypeIdentifier: "public.data")
+                attachment.name = "srtla-av-format-change.ts"
+                attachment.lifetime = .keepAlways
+                add(attachment)
             }
             await session.close()
         } catch {
