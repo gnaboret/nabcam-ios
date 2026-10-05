@@ -22,6 +22,8 @@ final class SrtlaControlSession: @unchecked Sendable {
         let outstandingPackets: Int
         let acknowledgedPackets: UInt64
         let relayRTTMilliseconds: Double?
+        let relayRTTAgeMilliseconds: Int64?
+        let traffic: DatagramRateMeter.Snapshot
     }
     struct RelaySnapshot: Sendable {
         let queuedPackets: Int
@@ -39,10 +41,11 @@ final class SrtlaControlSession: @unchecked Sendable {
         let interface: Interface
         var state: State = .connecting
         var controlPacketsAdmitted: UInt64 = 0
-        var transmittedBytes: UInt64 = 0
+        var traffic = DatagramRateMeter()
         var flight = SrtlaFlightTracker()
         var acknowledgedPackets: UInt64 = 0
         var rtt: Double?
+        var rttSampleTime: Int64?
         var window = 8.0
         var lastMediaSend: Int64?
         var retryAfter: Int64 = 0
@@ -113,16 +116,19 @@ final class SrtlaControlSession: @unchecked Sendable {
 
     func snapshot() -> [PathSnapshot] {
         queue.sync {
-            paths.keys.sorted().compactMap { id in
+            let now = Self.now()
+            return paths.keys.sorted().compactMap { id in
                 guard let path = paths[id] else { return nil }
                 let state: State
                 if path.state == .ready && registration.isRegistered(id) { state = .registered }
                 else if path.state == .ready && registration.isCoolingDown(id, at: Self.now()) { state = .cooldown }
                 else { state = path.state }
+                let traffic = path.traffic.snapshot(at: now)
                 return PathSnapshot(id: id, interface: path.interface, state: state,
                                     controlPacketsAdmitted: path.controlPacketsAdmitted,
-                                    transmittedBytes: path.transmittedBytes, outstandingPackets: path.flight.count,
-                                    acknowledgedPackets: path.acknowledgedPackets, relayRTTMilliseconds: path.rtt)
+                                    transmittedBytes: traffic.totalBytes, outstandingPackets: path.flight.count,
+                                    acknowledgedPackets: path.acknowledgedPackets, relayRTTMilliseconds: path.rtt,
+                                    relayRTTAgeMilliseconds: path.rttSampleTime.map { max(0, now - $0) }, traffic: traffic)
             }
         }
     }
@@ -221,6 +227,7 @@ final class SrtlaControlSession: @unchecked Sendable {
                                 let clamped = Double(max(1, min(4000, sample)))
                                 let smoothed = (paths[pathID]?.rtt ?? clamped) * 0.85 + clamped * 0.15
                                 paths[pathID]?.rtt = smoothed
+                                paths[pathID]?.rttSampleTime = now
                             }
                         }
                     }
@@ -293,7 +300,9 @@ final class SrtlaControlSession: @unchecked Sendable {
             if path.socket.send(transmission.bytes, completion: { [weak self] success in
                 guard let self else { return }
                 self.queue.async {
-                    if !self.closed, success { self.paths[pathID]?.transmittedBytes &+= UInt64(count) }
+                    if !self.closed, success {
+                        self.paths[pathID]?.traffic.record(bytes: count, retransmission: false, at: Self.now())
+                    }
                 }
             }) { paths[pathID]?.controlPacketsAdmitted &+= 1 }
         }
@@ -391,7 +400,10 @@ final class SrtlaControlSession: @unchecked Sendable {
                 let completed = Self.now()
                 if let submission { self.pacer.finish(submission.id, successful: success, at: completed) }
                 else if success, !self.controls.isEmpty { self.controls.removeFirst() }
-                if success { self.paths[id]?.transmittedBytes &+= UInt64(bytes.count) }
+                if success {
+                    let retransmission = sequence != nil && bytes[bytes.startIndex + 4] & 0x04 != 0
+                    self.paths[id]?.traffic.record(bytes: bytes.count, retransmission: retransmission, at: completed)
+                }
                 else {
                     if let sequence { _ = self.paths[id]?.flight.acknowledge(sequence: sequence, at: completed) }
                     self.paths[id]?.retryAfter = completed + 20

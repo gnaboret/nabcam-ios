@@ -178,7 +178,7 @@ final class SrtlaControlSessionTests: XCTestCase {
         let packets = (1...20).map { sequence -> Data in
             var packet = Data(repeating: UInt8(sequence), count: 1332)
             packet[0] = 0; packet[1] = 0; packet[2] = 0; packet[3] = UInt8(sequence)
-            packet[4] = 0 // Original SRT media, not a retransmission.
+            packet[4] = sequence == 20 ? 0x04 : 0 // One flagged retransmission exercises submission counters.
             return packet
         }
         for packet in packets { XCTAssertTrue(caller.send(packet)) }
@@ -191,6 +191,10 @@ final class SrtlaControlSessionTests: XCTestCase {
         XCTAssertEqual(delivered, packets)
         XCTAssertEqual(receiver.stats.mediaConnections.count, 2)
         XCTAssertTrue(session.snapshot().allSatisfy { $0.acknowledgedPackets > 0 })
+        let traffic = session.snapshot().map(\.traffic)
+        XCTAssertGreaterThanOrEqual(traffic.reduce(UInt64(0)) { $0 + $1.totalBytes }, UInt64(packets.reduce(0) { $0 + $1.count }))
+        XCTAssertEqual(traffic.reduce(UInt64(0)) { $0 + $1.totalRetransmittedBytes }, 1332)
+        XCTAssertEqual(traffic.reduce(UInt64(0)) { $0 + $1.totalRetransmittedPackets }, 1)
         XCTAssertEqual(session.relaySnapshot().queuedPackets, 0)
         XCTAssertEqual(session.relaySnapshot().overflowPackets, 0)
         XCTAssertEqual(session.relaySnapshot().localReplyDrops, 0)

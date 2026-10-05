@@ -40,6 +40,10 @@ struct BroadcastView: View {
                         if let paths = model.relayPathStatus {
                             Text(paths).font(.caption2).foregroundStyle(.white)
                         }
+                        if let traffic = model.relayTrafficStatus {
+                            Text(traffic).font(.caption2.monospacedDigit()).foregroundStyle(.white)
+                                .accessibilityLabel("Local UDP send rate and relay acknowledgment timing: \(traffic)")
+                        }
                     }
                     .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
                     Spacer()
@@ -240,7 +244,7 @@ struct BroadcastView: View {
                     Section("Diagnostics") {
                         ShareLink("Share diagnostic timeline", item: model.diagnosticReport)
                         Button("Clear diagnostic timeline", role: .destructive) { model.clearDiagnostics() }
-                        Text("Last 300 events, including camera/output FPS, frame gaps and experimental SRTLA queue status. No stream keys or chat contents. Receiver audio sync and network quality are not measured.")
+                        Text("Last 300 events: FPS, frame gaps and SRTLA queues, local send rates, retries and relay ACK timing. No stream keys or chat contents. Local sends do not prove receiver delivery or audio sync.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

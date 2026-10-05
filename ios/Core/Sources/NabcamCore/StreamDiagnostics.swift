@@ -1,5 +1,7 @@
 import Foundation
 
+public enum RelayLinkKind: String, Sendable { case wifi = "Wi-Fi", cellular = "Cellular", automatic = "Network" }
+
 /// Deliberately accepts no arbitrary strings, URLs, errors, or chat payloads.
 public enum StreamDiagnosticEvent: Sendable {
     case captureRequested(VideoPreset), captureReady, captureFailed, permissionsDenied
@@ -10,6 +12,7 @@ public enum StreamDiagnosticEvent: Sendable {
     case watermarks(count: Int)
     case frameRates(camera: Double, mixed: Double, cameraGapMs: Double, mixedGapMs: Double)
     case srtla(registeredPaths: Int, queuedPackets: Int, queuedBytes: Int, oldestMediaMs: Int64, overflows: UInt64, socketReplacements: UInt64)
+    case srtlaPath(link: RelayLinkKind, socketID: UInt64, traffic: DatagramRateMeter.Snapshot, relayRTTMs: Double?, rttAgeMs: Int64?)
 
     fileprivate var description: String {
         switch self {
@@ -34,7 +37,22 @@ public enum StreamDiagnosticEvent: Sendable {
             String(format: "Camera %.1f FPS / mixed output %.1f FPS; maximum callback gaps %.1f / %.1f ms (latest sample window)", camera, mixed, cameraGap, mixedGap)
         case .srtla(let paths, let packets, let bytes, let age, let overflows, let replacements):
             "Experimental SRTLA: \(paths) registered paths; queue \(packets) packets / \(bytes) bytes; oldest media \(age) ms; overflow \(overflows); socket replacements \(replacements)"
+        case .srtlaPath(let link, let id, let traffic, let rtt, let age):
+            Self.pathDescription(link: link, id: id, traffic: traffic, rtt: rtt, age: age)
         }
+    }
+
+    private static func pathDescription(link: RelayLinkKind, id: UInt64, traffic: DatagramRateMeter.Snapshot,
+                                        rtt: Double?, age: Int64?) -> String {
+        let timing: String
+        if let rtt, rtt.isFinite, let age {
+            timing = String(format: "relay ACK RTT smoothed/clamped %.1f ms (sample age %lld ms)", rtt, age)
+        } else { timing = "relay ACK RTT unavailable" }
+        let windows = traffic.windows.map {
+            String(format: "%lldms: %.1f kbps / %llu bytes / %llu packets / retry %llu bytes / %llu packets",
+                   $0.milliseconds, $0.kbps, $0.bytes, $0.packets, $0.retransmittedBytes, $0.retransmittedPackets)
+        }.joined(separator: "; ")
+        return "SRTLA \(link.rawValue) socket \(id): local UDP submissions total \(traffic.totalBytes) bytes / \(traffic.totalPackets) packets; retry total \(traffic.totalRetransmittedBytes) bytes / \(traffic.totalRetransmittedPackets) packets; \(timing); \(windows)"
     }
 }
 
@@ -66,7 +84,10 @@ public struct StreamDiagnostics: Sendable {
         UTC wall-clock timestamps; sequence numbers preserve order if system time changes.
         No stream URLs, keys, channel names, chat text, or raw transport errors are recorded.
         FPS counts camera/compositor callbacks over monotonic elapsed time, not encoded or received frames.
-        RTT, packet loss, transmitted bitrate and receiver A/V sync are not measured.
+        SRTLA rates count successful local UDP send completions, including protocol/retry bytes but excluding IP/UDP headers; not receiver throughput.
+        SRTLA 50/100/250/1000ms windows use monotonic milliseconds, sampled periodically; bursts between samples may be missed. Totals are per socket and reset on replacement.
+        SRTLA ACK RTT is a smoothed/clamped relay-hop estimate with sample age, not end-to-end SRT RTT. Retry counts use the SRT retransmission flag, not a packet-loss estimate.
+        Non-SRTLA network rates, packet loss and receiver A/V sync are not measured.
         """
         return ([header] + entries.map {
             "#\($0.sequence) \(formatter.string(from: $0.date)) — \($0.event.description)"

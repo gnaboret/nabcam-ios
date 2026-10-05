@@ -33,6 +33,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var audioLevel: AudioLevel?
     @Published private(set) var experimentalSrtlaEnabled = false
     @Published private(set) var relayPathStatus: String?
+    @Published private(set) var relayTrafficStatus: String?
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
@@ -220,6 +221,7 @@ final class BroadcastModel: ObservableObject {
                 srtlaRelay = nil
                 relayStatusTask?.cancel(); relayStatusTask = nil
                 relayPathStatus = nil
+                relayTrafficStatus = nil
                 session = nil
                 isBusy = false
                 isConnecting = false
@@ -251,6 +253,7 @@ final class BroadcastModel: ObservableObject {
         relayStatusTask?.cancel(); relayStatusTask = nil
         srtlaRelay?.close(); srtlaRelay = nil
         relayPathStatus = nil
+        relayTrafficStatus = nil
         if let previous {
             await mixer.removeOutput(previous.stream)
             try? await previous.close()
@@ -291,12 +294,28 @@ final class BroadcastModel: ObservableObject {
                     }
                     return "\(name) \(state)"
                 }.joined(separator: " · ")
+                self.relayTrafficStatus = paths.map { path in
+                    let name: String
+                    switch path.interface { case .wifi: name = "Wi-Fi"; case .cellular: name = "Cell"; case .automatic: name = "Net" }
+                    let rate = path.traffic.windows.last?.kbps ?? 0
+                    let rtt: String
+                    if let value = path.relayRTTMilliseconds, let age = path.relayRTTAgeMilliseconds, age <= 5000 {
+                        rtt = String(format: "%.0f ms", value)
+                    } else { rtt = "—" }
+                    return String(format: "%@ ↑ %.0f kbps · relay RTT %@", name, rate, rtt)
+                }.joined(separator: "\n")
                 if self.relayPathStatus != summary || sample % 5 == 0 {
                     let stats = relay.relaySnapshot()
                     self.diagnostics.append(.srtla(registeredPaths: paths.filter { $0.state == .registered }.count,
                         queuedPackets: stats.queuedPackets, queuedBytes: stats.queuedBytes,
                         oldestMediaMs: stats.oldestMilliseconds, overflows: stats.overflowPackets,
                         socketReplacements: stats.socketReplacements))
+                    for path in paths {
+                        let link: RelayLinkKind
+                        switch path.interface { case .wifi: link = .wifi; case .cellular: link = .cellular; case .automatic: link = .automatic }
+                        self.diagnostics.append(.srtlaPath(link: link, socketID: path.id, traffic: path.traffic,
+                            relayRTTMs: path.relayRTTMilliseconds, rttAgeMs: path.relayRTTAgeMilliseconds))
+                    }
                 }
                 self.relayPathStatus = summary.isEmpty ? "SRTLA relay stopped" : summary
                 sample += 1

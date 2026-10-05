@@ -2,6 +2,22 @@ import XCTest
 @testable import NabcamCore
 
 final class DiagnosticsTests: XCTestCase {
+    func testRelayTrafficDescribesMeasurementBoundariesAndRetryCounts() {
+        var meter = DatagramRateMeter()
+        meter.record(bytes: 1000, retransmission: true, at: 100)
+        var log = StreamDiagnostics()
+        log.append(.srtlaPath(link: .cellular, socketID: 7, traffic: meter.snapshot(at: 100),
+                             relayRTTMs: 42.5, rttAgeMs: 120))
+        let report = log.report()
+        XCTAssertTrue(report.contains("Cellular socket 7: local UDP submissions total 1000 bytes / 1 packets"))
+        XCTAssertTrue(report.contains("retry total 1000 bytes / 1 packets"))
+        XCTAssertTrue(report.contains("50ms: 160.0 kbps"))
+        XCTAssertTrue(report.contains("1000ms: 8.0 kbps"))
+        XCTAssertTrue(report.contains("42.5 ms (sample age 120 ms)"))
+        XCTAssertTrue(report.contains("not receiver throughput"))
+        XCTAssertTrue(report.contains("bursts between samples may be missed"))
+        XCTAssertFalse(report.contains("://"))
+    }
     func testSrtlaQueueSnapshotContainsOnlyOperationalCounts() {
         var log = StreamDiagnostics()
         log.append(.srtla(registeredPaths: 2, queuedPackets: 8, queuedBytes: 10656,
