@@ -18,6 +18,7 @@ targets:
     platform: iOS
     sources:
       - path: NabcamIOS
+        excludes: [Simulator.entitlements]
     info:
       path: build/Info.plist
       properties:
@@ -47,6 +48,19 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: false
+        "CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]": NabcamIOS/Simulator.entitlements
+  NabcamUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: NabcamUITests
+    dependencies:
+      - target: NabcamIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.ui-tests
+        GENERATE_INFOPLIST_FILE: true
+        TEST_TARGET_NAME: NabcamIOS
   NabcamStorageHost:
     type: application
     platform: iOS
@@ -84,6 +98,14 @@ targets:
         TEST_HOST: $(BUILT_PRODUCTS_DIR)/NabcamStorageHost.app/NabcamStorageHost
         BUNDLE_LOADER: $(TEST_HOST)
 schemes:
+  NabcamUITests:
+    build:
+      targets:
+        NabcamIOS: all
+        NabcamUITests: [test]
+    test:
+      targets:
+        - NabcamUITests
   NabcamStorageTests:
     build:
       targets:

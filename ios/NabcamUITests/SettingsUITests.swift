@@ -1,0 +1,56 @@
+import XCTest
+
+@MainActor
+final class SettingsUITests: XCTestCase {
+    func testSettingsCanBeOpenedScrolledAndClosed() {
+        continueAfterFailure = false
+        XCUIDevice.shared.orientation = .landscapeRight
+        let app = XCUIApplication()
+        app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
+        addUIInterruptionMonitor(withDescription: "Capture permission dialogs") { alert in
+            for title in ["Allow", "OK"] where alert.buttons[title].exists {
+                alert.buttons[title].tap()
+                return true
+            }
+            return false
+        }
+        app.launch()
+        // Simulator capture may be unavailable; acknowledge the real error rather
+        // than replacing production capture with a fake-success test mode.
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 30))
+        settings.tap()
+        if app.alerts.buttons["OK"].waitForExistence(timeout: 3) {
+            app.alerts.buttons["OK"].tap()
+        }
+        if !app.navigationBars["Settings"].exists { settings.tap() }
+        XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
+        attach("settings-camera", app: app)
+        let addWatermark = app.buttons["Add image watermark"]
+        for _ in 0..<12 {
+            if addWatermark.exists && addWatermark.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(addWatermark.exists)
+        XCTAssertTrue(addWatermark.isHittable)
+        attach("settings-overlays", app: app)
+        let diagnostics = app.buttons["Share diagnostic timeline"]
+        for _ in 0..<8 {
+            if diagnostics.exists && diagnostics.isHittable { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(diagnostics.exists)
+        attach("settings-diagnostics", app: app)
+        app.buttons["Done"].tap()
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        XCTAssertFalse(app.navigationBars["Settings"].exists)
+        attach("preview-hud-simulator-no-camera", app: app)
+    }
+
+    private func attach(_ name: String, app: XCUIApplication) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+}

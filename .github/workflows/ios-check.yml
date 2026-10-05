@@ -39,6 +39,21 @@ jobs:
           -sdk iphoneos -destination 'generic/platform=iOS'
           -derivedDataPath build/device -configuration Release
           ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+      - name: Exercise Settings UI and capture screenshots
+        working-directory: ios
+        run: |
+          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
+          xcodebuild test -project NabcamIOS.xcodeproj -scheme NabcamUITests \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build/ui-tests -resultBundlePath build/ui-results.xcresult \
+            -parallel-testing-enabled NO ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
+      - name: Export UI screenshots
+        if: always()
+        working-directory: ios
+        run: |
+          if [ -d build/ui-results.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/ui-results.xcresult --output-path build/ui-screenshots
+          fi
       - name: Verify packaged identity and permissions
         working-directory: ios
         run: |
@@ -68,4 +83,12 @@ jobs:
         with:
           name: keychain-simulator-test-results
           path: ios/build/storage-results.xcresult
+          if-no-files-found: ignore
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-ui-screenshots-and-results
+          path: |
+            ios/build/ui-screenshots
+            ios/build/ui-results.xcresult
           if-no-files-found: ignore
