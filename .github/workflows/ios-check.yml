@@ -50,6 +50,8 @@ jobs:
                   info = plistlib.load(f)
               assert info['CFBundleIdentifier'] == 'com.gnabcamirl.app'
               assert info['CFBundleDisplayName'] == 'GNAB CAM IRL'
+              assert info['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon'
+              assert (app / 'Assets.car').is_file()
               for permission in ['NSCameraUsageDescription', 'NSMicrophoneUsageDescription']:
                   assert info[permission].startswith('GNAB CAM IRL')
               with (app / 'PrivacyInfo.xcprivacy').open('rb') as f:
