@@ -7,6 +7,7 @@ public enum StreamDiagnosticEvent: Sendable {
     case captureRequested(VideoPreset), captureReady, captureFailed, permissionsDenied
     case connecting(bitrateKbps: Int), connected, connectionFailed, disconnected, stopped
     case captureActive(Bool), cameraChanged(front: Bool), microphoneMuted(Bool)
+    case cameraSwitchStarted(front: Bool, live: Bool), cameraSwitchRestored, cameraSwitchFailed
     case mirrorFront(Bool), clockEnabled(Bool), videoPreset(VideoPreset)
     case audioInterruption(began: Bool)
     case watermarks(count: Int)
@@ -27,6 +28,9 @@ public enum StreamDiagnosticEvent: Sendable {
         case .stopped: "Publish stopped"
         case .captureActive(let active): "Capture lifecycle requested: \(active ? "active" : "inactive")"
         case .cameraChanged(let front): "Camera attached: \(front ? "front" : "rear")"
+        case .cameraSwitchStarted(let front, let live): "Camera change requested: \(front ? "front" : "rear"); live \(live)"
+        case .cameraSwitchRestored: "Camera change failed; previous camera restored without restarting transport"
+        case .cameraSwitchFailed: "Camera change and rollback failed; stopping capture and publish"
         case .microphoneMuted(let muted): "Microphone muted: \(muted)"
         case .mirrorFront(let mirrored): "Front camera mirroring: \(mirrored)"
         case .clockEnabled(let enabled): "Encoded clock: \(enabled)"

@@ -48,6 +48,7 @@ final class BroadcastModel: ObservableObject {
     private var connectionTask: Task<Void, Never>?
     private var lifecycleTask: Task<Void, Never>?
     private var generation = 0
+    private let cameraSwitch = CameraSwitchCoordinator()
     private var active = true
     private var audioInterrupted = false
     private var streamClock: StreamClock?
@@ -258,7 +259,9 @@ final class BroadcastModel: ObservableObject {
             await mixer.removeOutput(previous.stream)
             try? await previous.close()
         }
+        let cameraOutcome = await cameraSwitch.cancelAndWait()
         await task?.value
+        if cameraOutcome == .unavailable { await releaseCapture() }
         UIApplication.shared.isIdleTimerDisabled = false
         status = "Stopped"
         diagnostics.append(.stopped)
@@ -325,25 +328,71 @@ final class BroadcastModel: ObservableObject {
     }
 
     func switchCamera() async {
-        guard isReady, !isBusy, !isLive else { return }
-        isBusy = true
-        defer { isBusy = false }
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: isFront ? .back : .front) else { return }
-        await turnOffTorch()
-        do {
-            try await mixer.attachVideo(device)
-            isFront.toggle()
-            diagnostics.append(.cameraChanged(front: isFront))
-            try await applyCameraMirroring()
-            let captureFPS = videoPreset.fps
-            try await mixer.configuration(video: 0) { try $0.setFrameRate(captureFPS) }
-            try await mixer.setFrameRate(videoPreset.fps)
-            await refreshCameraControls()
-        } catch {
-            await releaseCapture()
-            status = "Camera mode unavailable"
-            errorMessage = "This camera could not use \(videoPreset.label). Choose a lower mode or restart the preview."
+        guard active, !audioInterrupted, isReady, !isBusy else { return }
+        let previousFront = isFront
+        let nextFront = !previousFront
+        let preset = videoPreset
+        let mirrored = mirrorFrontCamera
+        guard let previous = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: previousFront ? .front : .back),
+              let next = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextFront ? .front : .back) else {
+            errorMessage = "The other camera is unavailable. Your current camera was kept."
+            return
         }
+        guard next.formats.contains(where: { format in
+            let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+            return size.width >= preset.width && size.height >= preset.height && format.videoSupportedFrameRateRanges.contains {
+                $0.minFrameRate <= preset.fps && preset.fps <= $0.maxFrameRate
+            }
+        }) else {
+            errorMessage = "The other camera does not advertise \(preset.label). Your current camera was kept. Choose a lower mode before broadcasting."
+            return
+        }
+        let owner = generation
+        isBusy = true
+        defer { if owner == generation { isBusy = false } }
+        await turnOffTorch()
+        guard owner == generation, active, !audioInterrupted else { return }
+        diagnostics.append(.cameraSwitchStarted(front: nextFront, live: isLive))
+        let result = await cameraSwitch.run(apply: { [self] in
+            try await attachCamera(next, mirrored: nextFront && mirrored, fps: preset.fps)
+            isFront = nextFront
+        }, restore: { [self] in
+            try await attachCamera(previous, mirrored: previousFront && mirrored, fps: preset.fps)
+            isFront = previousFront
+        })
+        guard owner == generation, active, !audioInterrupted else { return }
+        switch result {
+        case .changed:
+            diagnostics.append(.cameraChanged(front: isFront))
+        case .restored:
+            diagnostics.append(.cameraSwitchRestored)
+            errorMessage = "The other camera could not use \(preset.label). The previous camera was restored."
+        case .unavailable:
+            diagnostics.append(.cameraSwitchFailed)
+            await stop()
+            await releaseCapture()
+            status = "Camera unavailable · stream stopped"
+            errorMessage = "Neither camera could be restored. The stream was stopped. Restart the preview or choose a lower video mode."
+        case .cancelled, .busy: break
+        }
+        await refreshCameraControls()
+    }
+
+    private func attachCamera(_ device: AVCaptureDevice, mirrored: Bool, fps: Double) async throws {
+        // Replace video only. Keep the audio input, mixer, stream, codec settings
+        // and transport alive; never reset their clocks to hide a camera gap.
+        try await mixer.attachVideo(device)
+        // The pinned dependency suppresses errors in attachVideo's configuration
+        // callback, so apply throwing settings explicitly after attachment.
+        try await mixer.configuration(video: 0) { unit in
+            guard let connection = unit.connection else { throw CaptureError.unavailable }
+            try unit.setFrameRate(fps)
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                unit.isVideoMirrored = mirrored
+            } else if mirrored { throw CaptureError.unavailable }
+        }
+        try await mixer.setFrameRate(fps)
     }
 
     func setFrontCameraMirrored(_ enabled: Bool) async {

@@ -81,16 +81,16 @@ struct BroadcastView: View {
                     Spacer()
                     if model.isConnecting {
                         Button("CANCEL") { Task { await model.stop() } }
-                    } else if model.isBusy {
-                        ProgressView().tint(nabGreen)
                     } else if model.isLive {
                         Button("STOP", role: .destructive) { Task { await model.stop() } }
+                    } else if model.isBusy {
+                        ProgressView().tint(nabGreen)
                     } else {
                         Button("START") { confirmLive = true }.disabled(!model.isReady)
                     }
                     Spacer()
                     Button(model.isFront ? "REAR CAMERA" : "SELFIE") { Task { await model.switchCamera() } }
-                        .disabled(!model.isReady || model.isBusy || model.isLive)
+                        .disabled(!model.isReady || model.isBusy)
                 }
                 .buttonStyle(.borderedProminent).tint(nabGreen).foregroundStyle(.black)
             }.padding(20)
@@ -237,7 +237,7 @@ struct BroadcastView: View {
                     }
                     Section("First iOS build") {
                         Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
-                        Text("SRTLA is opt-in and experimental. Dual-SIM bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
+                        Text("SRTLA is opt-in and experimental. Dual-SIM bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
                         Button("Restart camera preview") { Task { await model.restartPreview() } }
                             .disabled(model.isLive || model.isBusy)
                     }
