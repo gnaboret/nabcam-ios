@@ -1,0 +1,14 @@
+name: GNAB iOS core tests
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - name: Test platform-independent streaming models
+        working-directory: ios/Core
+        run: swift test
