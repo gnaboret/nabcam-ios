@@ -24,6 +24,10 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         try await exerciseStream(blackholeOnePath: true)
     }
 
+    func testEncodedAudioAndVideoContinueAfterInputFormatChange() async throws {
+        try await exerciseStream(blackholeOnePath: false, videoFormatChange: true)
+    }
+
     func testEscapedStreamIDAndPassphraseReachReceiverUnchanged() async throws {
         try await exerciseStream(blackholeOnePath: false, escapedCredentials: true)
     }
@@ -65,7 +69,8 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         await fulfillment(of: [unexpectedDisconnect], timeout: 0.2)
     }
 
-    private func exerciseStream(blackholeOnePath: Bool, escapedCredentials: Bool = false, encrypted: Bool = true) async throws {
+    private func exerciseStream(blackholeOnePath: Bool, escapedCredentials: Bool = false, encrypted: Bool = true,
+                                videoFormatChange: Bool = false) async throws {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
         let session = Self.session
@@ -100,14 +105,27 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         }
         XCTAssertEqual(relay.snapshot().filter { $0.state == .registered }.count, 2)
         do {
-            try await session.configure(url, expectedMedias: [.audio])
+            try await session.configure(url, expectedMedias: videoFormatChange ? [.audio, .video] : [.audio])
             try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000, sampleRate: 48_000))
+            if videoFormatChange {
+                try await stream.setVideoSettings(VideoEncoderConfiguration.settings(codec: .h264, preset: .hd30, bitrateKbps: 600))
+            }
             try await session.connect({})
+            // Upstream publish() adds previously seen input types even after
+            // close. This reusable fixture explicitly chooses its media set;
+            // otherwise a prior A/V test can make an audio-only test await video.
+            await stream.setExpectedMedias(videoFormatChange ? [.audio, .video] : [.audio])
             let connected = await session.connected
             XCTAssertTrue(connected)
             let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
             var packetsBeforeLinkLoss = 0
+            var beforeFormatChange = NativeSRTReceiver.Snapshot()
             for frame in 0..<90 {
+                if videoFormatChange, frame == 45 {
+                    beforeFormatChange = server.snapshot()
+                    XCTAssertGreaterThan(beforeFormatChange.audioPES, 0)
+                    XCTAssertGreaterThan(beforeFormatChange.videoPES, 0)
+                }
                 if blackholeOnePath, frame == 45 {
                     packetsBeforeLinkLoss = server.snapshot().transportPackets
                     XCTAssertGreaterThan(packetsBeforeLinkLoss, 0)
@@ -118,17 +136,32 @@ final class SrtlaInteroperabilityTests: XCTestCase {
                 let samples = try XCTUnwrap(buffer.floatChannelData?[0])
                 for index in 0..<1024 { samples[index] = Float(sin(Double(frame * 1024 + index) * 0.0576)) * 0.25 }
                 await stream.append(buffer, when: AVAudioTime(sampleTime: Int64(frame * 1024), atRate: 48_000))
+                if videoFormatChange, frame.isMultiple(of: 2) {
+                    // Synthetic capture input changes size, while the requested
+                    // output and the audio/publisher session remain unchanged.
+                    let video = try Self.videoSample(width: frame < 45 ? 640 : 1280,
+                                                     height: frame < 45 ? 360 : 720,
+                                                     sampleTime: Int64((frame + 1) * 1024))
+                    await stream.append(video)
+                }
                 try await Task.sleep(for: .milliseconds(21))
             }
             let minimumReceived = blackholeOnePath ? max(14, packetsBeforeLinkLoss + 7) : 14
             for _ in 0..<100 {
-                if server.snapshot().transportPackets >= minimumReceived { break }
+                let snapshot = server.snapshot()
+                if snapshot.transportPackets >= minimumReceived,
+                   !videoFormatChange || (snapshot.videoPES >= beforeFormatChange.videoPES + 10 &&
+                                          snapshot.audioPES >= beforeFormatChange.audioPES + 10) { break }
                 try await Task.sleep(for: .milliseconds(50))
             }
             let received = server.snapshot()
             XCTAssertTrue(received.accepted)
             XCTAssertEqual(received.streamID, streamID)
             XCTAssertGreaterThanOrEqual(received.transportPackets, 14)
+            if videoFormatChange {
+                XCTAssertGreaterThanOrEqual(received.videoPES - beforeFormatChange.videoPES, 10)
+                XCTAssertGreaterThanOrEqual(received.audioPES - beforeFormatChange.audioPES, 10)
+            }
             if blackholeOnePath {
                 XCTAssertGreaterThanOrEqual(received.transportPackets - packetsBeforeLinkLoss, 7)
             }
@@ -142,11 +175,38 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             throw error
         }
     }
+
+    private static func videoSample(width: Int, height: Int, sampleTime: Int64) throws -> CMSampleBuffer {
+        var image: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_32BGRA,
+                                          nil, &image), kCVReturnSuccess)
+        let pixels = try XCTUnwrap(image)
+        XCTAssertEqual(CVPixelBufferLockBaseAddress(pixels, []), kCVReturnSuccess)
+        if let bytes = CVPixelBufferGetBaseAddress(pixels) {
+            // Low-complexity gray fixture avoids testing uplink capacity.
+            memset(bytes, 128, CVPixelBufferGetBytesPerRow(pixels) * height)
+        }
+        CVPixelBufferUnlockBaseAddress(pixels, [])
+        var format: CMVideoFormatDescription?
+        XCTAssertEqual(CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault,
+                                                                   imageBuffer: pixels, formatDescriptionOut: &format), noErr)
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 2048, timescale: 48_000),
+                                       presentationTimeStamp: CMTime(value: sampleTime, timescale: 48_000),
+                                       decodeTimeStamp: .invalid)
+        var sample: CMSampleBuffer?
+        XCTAssertEqual(CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixels,
+                                                               formatDescription: try XCTUnwrap(format),
+                                                               sampleTiming: &timing, sampleBufferOut: &sample), noErr)
+        return try XCTUnwrap(sample)
+    }
 }
 
 /// Actual libsrt listener. Nonblocking accept/receive make failure cleanup bounded.
 private final class NativeSRTReceiver: @unchecked Sendable {
-    struct Snapshot { var accepted = false; var streamID = ""; var transportPackets = 0; var invalidMessages = 0 }
+    struct Snapshot {
+        var accepted = false; var streamID = ""; var transportPackets = 0; var invalidMessages = 0
+        var audioPES = 0; var videoPES = 0
+    }
     enum Failure: Error { case setup }
     let port: UInt16
     private let listener: SRTSOCKET
@@ -238,6 +298,18 @@ private final class NativeSRTReceiver: @unchecked Sendable {
             let size = Int(count)
             if size % 188 == 0 && stride(from: 0, to: size, by: 188).allSatisfy({ UInt8(bitPattern: buffer[$0]) == 0x47 }) {
                 stats.transportPackets += size / 188
+                // Pinned HaishinKit muxer uses video PID 256 and audio PID 257.
+                // Count PES starts, not padding/continuations. This proves
+                // transport progress only, not decoding, lip sync, or camera FPS.
+                for offset in stride(from: 0, to: size, by: 188) {
+                    let high = UInt8(bitPattern: buffer[offset + 1])
+                    let pid = (Int(high & 0x1f) << 8) | Int(UInt8(bitPattern: buffer[offset + 2]))
+                    let control = UInt8(bitPattern: buffer[offset + 3])
+                    if high & 0x40 != 0, control & 0x10 != 0 {
+                        if pid == 256 { stats.videoPES += 1 }
+                        if pid == 257 { stats.audioPES += 1 }
+                    }
+                }
             } else { stats.invalidMessages += 1 }
         }
     }
