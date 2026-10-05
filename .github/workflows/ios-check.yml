@@ -26,22 +26,22 @@ jobs:
         run: >-
           xcodebuild -project NabcamIOS.xcodeproj -scheme NabcamIOS
           -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
-          -derivedDataPath build/simulator -configuration Debug
+          -derivedDataPath build/validation -configuration Debug
           ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
-      - name: Exercise Keychain on iOS simulator
+      - name: Exercise Keychain, overlays and audio on iOS simulator
         working-directory: ios
         run: |
           SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
           xcodebuild test -project NabcamIOS.xcodeproj -scheme NabcamStorageTests \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-            -derivedDataPath build/storage-tests -resultBundlePath build/storage-results.xcresult \
+            -derivedDataPath build/validation -resultBundlePath build/storage-results.xcresult \
             -parallel-testing-enabled NO ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
       - name: Compile for iPhone
         working-directory: ios
         run: >-
           xcodebuild -project NabcamIOS.xcodeproj -scheme NabcamIOS
           -sdk iphoneos -destination 'generic/platform=iOS'
-          -derivedDataPath build/device -configuration Release
+          -derivedDataPath build/validation -configuration Release
           ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
       - name: Exercise Settings UI and capture screenshots
         working-directory: ios
@@ -49,7 +49,7 @@ jobs:
           SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
           xcodebuild test -project NabcamIOS.xcodeproj -scheme NabcamUITests \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
-            -derivedDataPath build/ui-tests -resultBundlePath build/ui-results.xcresult \
+            -derivedDataPath build/validation -resultBundlePath build/ui-results.xcresult \
             -parallel-testing-enabled NO ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
       - name: Export UI screenshots
         if: always()
@@ -64,7 +64,7 @@ jobs:
           python3 - <<'PY'
           import pathlib, plistlib
           for target, config in [('simulator', 'Debug-iphonesimulator'), ('device', 'Release-iphoneos')]:
-              app = pathlib.Path('build') / target / 'Build/Products' / config / 'NabcamIOS.app'
+              app = pathlib.Path('build/validation/Build/Products') / config / 'NabcamIOS.app'
               with (app / 'Info.plist').open('rb') as f:
                   info = plistlib.load(f)
               assert info['CFBundleIdentifier'] == 'com.gnabcamirl.app'
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: nabcam-ios-simulator-not-for-iphone-install
-          path: ios/build/simulator/Build/Products/Debug-iphonesimulator/NabcamIOS.app
+          path: ios/build/validation/Build/Products/Debug-iphonesimulator/NabcamIOS.app
       - uses: actions/upload-artifact@v4
         if: always()
         with:
