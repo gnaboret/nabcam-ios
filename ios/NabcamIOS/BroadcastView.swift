@@ -1,5 +1,6 @@
 import HaishinKit
 import SwiftUI
+import NabcamCore
 
 private let nabPurple = Color(red: 0.64, green: 0.43, blue: 1)
 private let nabGreen = Color(red: 0.05, green: 0.81, blue: 0.63)
@@ -7,10 +8,14 @@ private let nabGreen = Color(red: 0.05, green: 0.81, blue: 0.63)
 struct BroadcastView: View {
     @StateObject private var model = BroadcastModel()
     @StateObject private var chat = KickChatService()
+    @StateObject private var connections = ConnectionProfiles()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
     @State private var confirmLive = false
-    // Credentials stay in memory until a Keychain-backed profile store is added.
+    @State private var profileID: UUID?
+    @State private var profileName = ""
+    @State private var confirmDelete = false
+    @State private var profileNotice: String?
     @State private var destination = ""
     @State private var bitrate = 1600
     @State private var chatChannel = ""
@@ -57,7 +62,7 @@ struct BroadcastView: View {
                 .buttonStyle(.borderedProminent).tint(nabGreen).foregroundStyle(.black)
             }.padding(20)
         }
-        .task { await model.setActive(true) }
+        .task { connections.load(); await model.setActive(true) }
         .onChange(of: scenePhase) { phase in
             if phase == .background { chat.disconnect(); Task { await model.setActive(false) } }
             else if phase == .active { Task { await model.setActive(true) } }
@@ -66,10 +71,36 @@ struct BroadcastView: View {
             NavigationStack {
                 Form {
                     Section("Connection") {
+                        Menu("Saved connections") {
+                            Button("New connection") {
+                                profileID = nil; profileName = ""; destination = ""; profileNotice = nil
+                            }
+                            ForEach(connections.profiles) { profile in
+                                Button(profile.name) {
+                                    profileID = profile.id; profileName = profile.name
+                                    destination = profile.destination; bitrate = profile.bitrateKbps
+                                    chatChannel = profile.chatChannel; profileNotice = nil
+                                }
+                            }
+                        }.disabled(model.isLive || model.isBusy)
+                        TextField("Connection name", text: $profileName)
+                            .disabled(model.isLive || model.isBusy)
                         SecureField("Full RTMP / RTMPS / SRT URL", text: $destination)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .disabled(model.isLive || model.isBusy)
-                        Text("Include the RTMP stream key in the URL. SRT query options are passed through unchanged. URLs are kept only until you close the app.").font(.caption).foregroundStyle(.secondary)
+                        Text("Include your stream key in the URL. Save stores this connection, bitrate and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
+                        Button(profileID == nil ? "Save connection" : "Save changes") { saveConnection() }
+                            .disabled(model.isLive || model.isBusy || !connections.canWrite)
+                        if profileID != nil {
+                            Button("Delete saved connection", role: .destructive) { confirmDelete = true }
+                                .disabled(model.isLive || model.isBusy || !connections.canWrite)
+                        }
+                        if let error = connections.errorMessage {
+                            Text(error).font(.caption).foregroundStyle(.red)
+                            Button("Retry loading connections") { connections.load() }
+                                .disabled(model.isLive || model.isBusy)
+                        }
+                        if let profileNotice { Text(profileNotice).font(.caption).foregroundStyle(nabPurple) }
                     }
                     Section("Video") {
                         Picker("Target bitrate", selection: $bitrate) {
@@ -96,6 +127,14 @@ struct BroadcastView: View {
                 .navigationTitle("Settings")
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
             }.tint(nabPurple)
+            .confirmationDialog("Delete this saved connection?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) {
+                    if let id = profileID, connections.delete(id: id) {
+                        profileID = nil; profileName = ""; destination = ""
+                        profileNotice = "Saved connection deleted."
+                    }
+                }
+            }
         }
         .confirmationDialog("Start broadcasting camera and microphone?", isPresented: $confirmLive, titleVisibility: .visible) {
             Button("Go live") { model.start(destination: destination, bitrateKbps: bitrate) }
@@ -103,6 +142,17 @@ struct BroadcastView: View {
         .alert("NABCAM IRL", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
+    }
+
+    private func saveConnection() {
+        do {
+            let profile = try ConnectionProfile(id: profileID ?? UUID(), name: profileName,
+                destination: destination, bitrateKbps: bitrate, chatChannel: chatChannel)
+            if connections.save(profile) {
+                profileID = profile.id; profileName = profile.name
+                profileNotice = "Saved securely on this iPhone."
+            } else { profileNotice = nil }
+        } catch { profileNotice = error.localizedDescription }
     }
 }
 
