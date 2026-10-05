@@ -184,14 +184,9 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(addWatermark.isHittable)
         XCTAssertTrue(fullyVisible(addWatermark, in: app, form: form))
         selectPage("advanced", app: app)
-        let diagnostics = app.buttons["Share diagnostic timeline"]
-        for _ in 0..<24 {
-            if fullyVisible(diagnostics, in: app, form: form) { break }
-            scroll(form, toward: diagnostics)
-        }
-        XCTAssertTrue(diagnostics.exists)
-        XCTAssertTrue(fullyVisible(diagnostics, in: app, form: form))
-        attach("settings-diagnostics", app: app)
+        // Visit the first row before scrolling down. On compact phones SwiftUI
+        // removes offscreen Form rows from the accessibility tree, so a missing
+        // row cannot tell the scroll helper whether it is above or below us.
         let acknowledgments = app.buttons["Open-source acknowledgments"]
         for _ in 0..<24 {
             if fullyVisible(acknowledgments, in: app, form: form) { break }
@@ -205,6 +200,14 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(notices.label.contains("OpenSSL 3.3.2"))
         attach("settings-acknowledgments", app: app)
         app.navigationBars.buttons["Settings"].tap()
+        let diagnostics = app.buttons["Share diagnostic timeline"]
+        for _ in 0..<24 {
+            if fullyVisible(diagnostics, in: app, form: form) { break }
+            scroll(form, toward: diagnostics)
+        }
+        XCTAssertTrue(diagnostics.exists)
+        XCTAssertTrue(fullyVisible(diagnostics, in: app, form: form))
+        attach("settings-diagnostics", app: app)
         app.buttons["Done"].tap()
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         XCTAssertFalse(app.navigationBars["Settings"].exists)
