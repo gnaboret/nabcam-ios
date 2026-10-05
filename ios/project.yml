@@ -75,6 +75,7 @@ targets:
       - path: NabcamIOS/SrtlaDatagramPath.swift
       - path: NabcamIOS/SrtlaControlSession.swift
       - path: NabcamIOS/SrtLocalRelaySocket.swift
+      - path: NabcamIOS/SrtConnectionOptions.swift
     dependencies:
       - package: NabcamCore
       - package: HaishinKit

@@ -25,12 +25,18 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         try await exerciseEncryptedStream(blackholeOnePath: true)
     }
 
-    private func exerciseEncryptedStream(blackholeOnePath: Bool) async throws {
+    func testEscapedStreamIDAndPassphraseReachReceiverUnchanged() async throws {
+        try await exerciseEncryptedStream(blackholeOnePath: false, escapedCredentials: true)
+    }
+
+    private func exerciseEncryptedStream(blackholeOnePath: Bool, escapedCredentials: Bool = false) async throws {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
         let connection = Self.connection
         let stream = Self.stream
-        let server = try NativeSRTReceiver()
+        let streamID = escapedCredentials ? "#!::r=nabcam/interop,token=a+b&c?%" : "nabcam-interop"
+        let passphrase = escapedCredentials ? "nabcam+local&test#?%" : "nabcam-local-test"
+        let server = try NativeSRTReceiver(passphrase: passphrase)
         defer { server.close() }
         server.start()
         let proxyReady = expectation(description: "Local SRTLA-to-SRT proxy ready")
@@ -39,7 +45,12 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         proxy.start()
         await fulfillment(of: [proxyReady], timeout: 5)
         let receiverPort = try XCTUnwrap(proxy.port)
-        let endpoint = try SrtlaEndpoint("127.0.0.1:\(receiverPort)?mode=caller&latency=120&conntimeo=5000&streamid=nabcam-interop&passphrase=nabcam-local-test&pbkeylen=16")
+        var address = URLComponents()
+        address.scheme = "srtla"; address.host = "127.0.0.1"; address.port = Int(receiverPort)
+        address.queryItems = [URLQueryItem(name: "mode", value: "caller"), URLQueryItem(name: "latency", value: "120"),
+                              URLQueryItem(name: "conntimeo", value: "5000"), URLQueryItem(name: "streamid", value: streamID),
+                              URLQueryItem(name: "passphrase", value: passphrase), URLQueryItem(name: "pbkeylen", value: "16")]
+        let endpoint = try SrtlaEndpoint(XCTUnwrap(address.url).absoluteString)
         let relay = try SrtlaControlSession(endpoint: endpoint, interfaces: [.automatic, .automatic], pacingKbps: 1200)
         defer { relay.close() }
         relay.start()
@@ -50,7 +61,9 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         }
         XCTAssertEqual(relay.snapshot().filter { $0.state == .registered }.count, 2)
         do {
-            try await connection.connect(url)
+            let options = try SrtConnectionOptions(url)
+            try await options.apply(to: connection)
+            try await connection.connect(options.url)
             let connected = await connection.connected
             XCTAssertTrue(connected)
             await stream.setExpectedMedias([.audio])
@@ -78,7 +91,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             }
             let received = server.snapshot()
             XCTAssertTrue(received.accepted)
-            XCTAssertEqual(received.streamID, "nabcam-interop")
+            XCTAssertEqual(received.streamID, streamID)
             XCTAssertGreaterThanOrEqual(received.transportPackets, 14)
             if blackholeOnePath {
                 XCTAssertGreaterThanOrEqual(received.transportPackets - packetsBeforeLinkLoss, 7)
@@ -110,15 +123,15 @@ private final class NativeSRTReceiver: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var stopped = false
 
-    init() throws {
+    init(passphrase: String) throws {
         let socket = srt_create_socket()
         var complete = false
         defer { if !complete, socket != SRT_INVALID_SOCK { srt_close(socket) } }
         guard socket != SRT_INVALID_SOCK else { throw Failure.setup }
         var synchronous = false
         guard srt_setsockflag(socket, SRTO_RCVSYN, &synchronous, Int32(MemoryLayout<Bool>.size)) == 0 else { throw Failure.setup }
-        let passphrase = Array("nabcam-local-test".utf8)
-        let configured = passphrase.withUnsafeBytes { srt_setsockflag(socket, SRTO_PASSPHRASE, $0.baseAddress, Int32($0.count)) }
+        let passwordBytes = Array(passphrase.utf8)
+        let configured = passwordBytes.withUnsafeBytes { srt_setsockflag(socket, SRTO_PASSPHRASE, $0.baseAddress, Int32($0.count)) }
         guard configured == 0 else { throw Failure.setup }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
