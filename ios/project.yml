@@ -108,6 +108,8 @@ targets:
         product: HaishinKit
       - package: HaishinKit
         product: SRTHaishinKit
+      - package: HaishinKit
+        product: RTMPHaishinKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-tests

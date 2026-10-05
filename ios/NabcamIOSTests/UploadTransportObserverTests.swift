@@ -1,5 +1,5 @@
 import HaishinKit
-import SRTHaishinKit
+import RTMPHaishinKit
 import XCTest
 @testable import NabcamStorageHost
 
@@ -22,13 +22,14 @@ final class UploadTransportObserverTests: XCTestCase {
     }
 
     func testResetDoesNotChangeEncoderOrForgetBytes() async throws {
-        let connection = SRTConnection()
-        let stream = SRTStream(connection: connection)
+        let connection = RTMPConnection()
+        let stream = RTMPStream(connection: connection)
         let observer = UploadTransportObserver()
         try await stream.setVideoSettings(VideoCodecSettings(bitRate: 1_600_000))
         try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000))
         await observer.record(totalBytesOut: 8_600_000)
-        await observer.adjustBitrate(.reset, stream: stream)
+        await stream.setBitRateStrategy(observer)
+        await stream.dispatch(.reset)
         let video = await stream.videoSettings
         let audio = await stream.audioSettings
         let bytes = await observer.bytes

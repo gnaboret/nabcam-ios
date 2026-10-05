@@ -169,6 +169,16 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             XCTAssertEqual(proxy.failureCount, 0)
             XCTAssertEqual(proxy.mediaPathCount, 2)
             XCTAssertEqual(relay.relaySnapshot().overflowPackets, 0)
+            // Exercise the public cached statistic used for plain SRT uploads.
+            // These are local SRT bytes, not added to the outer relay's UDP total.
+            var sentBytes: UInt64 = 0
+            for _ in 0..<60 {
+                sentBytes = await session.connection.performanceData?.byteSentTotal ?? 0
+                if sentBytes > 0 { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertGreaterThan(sentBytes, 0, "The native transport must provide actual sent-byte samples")
+            XCTAssertGreaterThan(relay.transmittedBytes(), 0)
             if videoFormatChange {
                 // Synthetic gray video and sine-wave audio only, never capture
                 // from the phone. CI decodes the receiver's actual TS bytes.
