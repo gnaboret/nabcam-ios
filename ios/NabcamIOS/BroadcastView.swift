@@ -32,6 +32,7 @@ struct BroadcastView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("GNAB CAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
                         Text(model.status).font(.caption).foregroundStyle(model.isLive ? nabGreen : .white)
+                            .accessibilityIdentifier("capture-status")
                         if let capture = model.captureFPS, let mixed = model.mixedFPS {
                             Text(String(format: "Camera %.1f · Output %.1f FPS", capture, mixed))
                                 .font(.caption.monospacedDigit()).foregroundStyle(.white)
@@ -50,6 +51,18 @@ struct BroadcastView: View {
                     }.frame(maxHeight: 200, alignment: .bottom).clipped()
                 }
                 HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(model.isMuted ? "MUTED" : (model.audioLevel?.clipped == true ? "CLIP" : "AUDIO"))
+                            .font(.caption2.bold()).foregroundStyle(.white)
+                        ProgressView(value: model.isMuted ? 0 : (model.audioLevel?.fraction ?? 0))
+                            .tint(model.audioLevel?.clipped == true ? .red : nabGreen)
+                        Text(model.audioLevel.map { String(format: "PK %.0f dBFS", $0.peakDBFS) } ?? "No samples")
+                            .font(.caption2.monospacedDigit()).foregroundStyle(.white)
+                    }
+                    .frame(width: 94).padding(8)
+                    .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Local audio output level")
                     Button(model.isMuted ? "MIC OFF" : "MIC ON") { Task { await model.toggleMute() } }
                         .disabled(!model.isReady || model.isBusy)
                     if model.hasTorch {

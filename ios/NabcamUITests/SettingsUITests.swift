@@ -15,6 +15,22 @@ final class SettingsUITests: XCTestCase {
         }
         app.launch()
         XCUIDevice.shared.orientation = .landscapeRight
+        // Finish both permission requests and the resulting real capture attempt
+        // before opening Settings. A second permission alert can otherwise arrive
+        // during a drag, followed by the simulator's camera-unavailable alert.
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        for _ in 0..<6 {
+            if springboard.alerts.buttons["Allow"].waitForExistence(timeout: 3) {
+                springboard.alerts.buttons["Allow"].tap()
+            }
+            if app.alerts.buttons["OK"].exists { app.alerts.buttons["OK"].tap() }
+            let status = app.staticTexts["capture-status"]
+            if status.exists && (status.label == "Camera unavailable" || status.label.hasPrefix("Preview · requested")) { break }
+        }
+        let settled = NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Camera unavailable", "Preview · requested")
+        expectation(for: settled, evaluatedWith: app.staticTexts["capture-status"])
+        waitForExpectations(timeout: 15)
+        if app.alerts.buttons["OK"].exists { app.alerts.buttons["OK"].tap() }
         // Simulator capture may be unavailable; acknowledge the real error rather
         // than replacing production capture with a fake-success test mode.
         let settings = app.buttons["Settings"]

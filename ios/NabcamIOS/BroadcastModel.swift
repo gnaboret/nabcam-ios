@@ -30,6 +30,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var overlayStorageMessage: String?
     @Published private(set) var captureFPS: Double?
     @Published private(set) var mixedFPS: Double?
+    @Published private(set) var audioLevel: AudioLevel?
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
@@ -49,6 +50,8 @@ final class BroadcastModel: ObservableObject {
     private let captureMonitor = MixerFrameMonitor(track: 0)
     private let mixedMonitor = MixerFrameMonitor(track: UInt8.max)
     private var frameStatsTask: Task<Void, Never>?
+    private let audioMonitor = MixerAudioMonitor()
+    private var audioMeterTask: Task<Void, Never>?
 
     private func prepare() async {
         guard active, !audioInterrupted, !isReady, !isBusy else { return }
@@ -100,13 +103,16 @@ final class BroadcastModel: ObservableObject {
             guard active, !audioInterrupted else { await releaseCapture(); return }
             captureMonitor.reset()
             mixedMonitor.reset()
+            audioMonitor.reset()
             await mixer.addOutput(captureMonitor)
             await mixer.addOutput(mixedMonitor)
+            await mixer.addOutput(audioMonitor)
             await mixer.startRunning()
             isReady = true
             diagnostics.append(.captureReady)
             startClockUpdates()
             startFrameStatistics()
+            startAudioMeter()
             await refreshCameraControls()
             status = "Preview · requested \(videoPreset.label)"
         } catch {
@@ -505,6 +511,18 @@ final class BroadcastModel: ObservableObject {
         }
     }
 
+    private func startAudioMeter() {
+        audioMeterTask?.cancel()
+        audioMeterTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(100)) }
+                catch { return }
+                guard let self, self.isReady, !Task.isCancelled else { return }
+                self.audioLevel = self.audioMonitor.snapshot()
+            }
+        }
+    }
+
     private func startFrameStatistics() {
         frameStatsTask?.cancel()
         frameStatsTask = Task { [weak self] in
@@ -561,6 +579,11 @@ final class BroadcastModel: ObservableObject {
     }
 
     private func releaseCapture() async {
+        audioMeterTask?.cancel()
+        audioMeterTask = nil
+        await mixer.removeOutput(audioMonitor)
+        audioMonitor.reset()
+        audioLevel = nil
         frameStatsTask?.cancel()
         frameStatsTask = nil
         await mixer.removeOutput(captureMonitor)
