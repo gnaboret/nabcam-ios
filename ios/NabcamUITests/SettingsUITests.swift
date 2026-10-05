@@ -50,10 +50,18 @@ final class SettingsUITests: XCTestCase {
         XCTAssertEqual(fps.value as? String, "1")
         setSwitch(fps, to: "0", app: app, name: "fps")
         let flashlightShortcut = app.switches["hub-flashlight-toggle"]
+        for _ in 0..<8 {
+            if fullyVisible(flashlightShortcut, in: app, form: form) { break }
+            scroll(form, toward: flashlightShortcut)
+        }
         XCTAssertTrue(fullyVisible(flashlightShortcut, in: app, form: form))
         XCTAssertEqual(flashlightShortcut.value as? String, "0")
         setSwitch(flashlightShortcut, to: "1", app: app, name: "flashlight-shortcut")
         let hubSwap = app.switches["hub-swap-toggle"]
+        for _ in 0..<8 {
+            if fullyVisible(hubSwap, in: app, form: form) { break }
+            scroll(form, toward: hubSwap)
+        }
         XCTAssertTrue(fullyVisible(hubSwap, in: app, form: form))
         XCTAssertEqual(hubSwap.value as? String, "0")
         setSwitch(hubSwap, to: "1", app: app, name: "hub")
@@ -70,16 +78,43 @@ final class SettingsUITests: XCTestCase {
         attach("preview-hub-settings-on-left", app: app)
         settings.tap()
         XCTAssertTrue(hubSwap.waitForExistence(timeout: 5))
+        for _ in 0..<8 {
+            if fullyVisible(fps, in: app, form: form) { break }
+            scroll(form, toward: fps)
+        }
         XCTAssertEqual(fps.value as? String, "0")
         setSwitch(fps, to: "1", app: app, name: "fps")
+        for _ in 0..<8 {
+            if fullyVisible(flashlightShortcut, in: app, form: form) { break }
+            scroll(form, toward: flashlightShortcut)
+        }
         XCTAssertEqual(flashlightShortcut.value as? String, "1")
         setSwitch(flashlightShortcut, to: "0", app: app, name: "flashlight-shortcut")
+        for _ in 0..<8 {
+            if fullyVisible(hubSwap, in: app, form: form) { break }
+            scroll(form, toward: hubSwap)
+        }
         setSwitch(hubSwap, to: "0", app: app, name: "hub")
         app.buttons["Done"].tap()
         XCTAssertTrue(hud.waitForExistence(timeout: 5))
         XCTAssertLessThan(hud.frame.maxX, settings.frame.minX)
         settings.tap()
         XCTAssertTrue(form.waitForExistence(timeout: 5))
+        let handedness = app.switches["hub-left-handed-toggle"]
+        for _ in 0..<8 {
+            if fullyVisible(handedness, in: app, form: form) { break }
+            scroll(form, toward: handedness)
+        }
+        setSwitch(handedness, to: "1", app: app, name: "left-handed")
+        app.buttons["Done"].tap()
+        XCTAssertLessThan(app.buttons["SELFIE"].frame.maxX, app.buttons["MIC ON"].frame.minX)
+        XCTAssertLessThan(settings.frame.maxX, hud.frame.minX)
+        let chatShortcut = app.buttons["preview-chat-toggle"]
+        XCTAssertTrue(chatShortcut.isHittable)
+        attach("preview-left-handed", app: app)
+        settings.tap()
+        XCTAssertEqual(handedness.value as? String, "1")
+        setSwitch(handedness, to: "0", app: app, name: "left-handed")
         selectPage("camera", app: app)
         attach("settings-camera", app: app)
         if cameraUnavailable {
@@ -174,6 +209,12 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         XCTAssertFalse(app.navigationBars["Settings"].exists)
         attach("preview-hud-simulator-no-camera", app: app)
+        chatShortcut.tap()
+        XCTAssertTrue(app.buttons["settings-tab-overlay"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["settings-tab-overlay"].isSelected)
+        XCTAssertTrue(app.textFields["Kick channel name"].exists,
+                      "Chat shortcut should open setup when no channel is configured")
+        app.buttons["Done"].tap()
     }
 
     private func selectPage(_ name: String, app: XCUIApplication) {

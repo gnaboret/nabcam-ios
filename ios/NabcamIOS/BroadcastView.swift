@@ -34,6 +34,7 @@ struct BroadcastView: View {
     @AppStorage("hub.settingsOnLeft") private var settingsOnLeft = false
     @AppStorage("hub.showFlashlightButton") private var showFlashlightButton = false
     @AppStorage("hub.showLiveFPS") private var showLiveFPS = true
+    @AppStorage("hub.leftHandedMode") private var leftHandedMode = false
 
     var body: some View {
         ZStack {
@@ -41,7 +42,7 @@ struct BroadcastView: View {
             CapturePreview(model: model).ignoresSafeArea()
             VStack {
                 HStack(alignment: .top) {
-                    if settingsOnLeft {
+                    if settingsOnLeft != leftHandedMode {
                         settingsButton
                         Spacer()
                         statusHUD
@@ -54,31 +55,13 @@ struct BroadcastView: View {
                 Spacer()
                 if chat.isEnabled {
                     HStack {
+                        if leftHandedMode { Spacer() }
                         ChatOverlayView(chat: chat).frame(maxWidth: 380)
-                        Spacer()
+                        if !leftHandedMode { Spacer() }
                     }.frame(maxHeight: 200, alignment: .bottom).clipped()
                 }
                 HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(model.isMuted ? "MUTED" : (model.audioLevel?.clipped == true ? "CLIP" : "AUDIO"))
-                            .font(.caption2.bold()).foregroundStyle(.white)
-                        ProgressView(value: model.isMuted ? 0 : (model.audioLevel?.fraction ?? 0))
-                            .tint(model.audioLevel?.clipped == true ? .red : nabGreen)
-                        Text(model.audioLevel.map { String(format: "PK %.0f dBFS", $0.peakDBFS) } ?? "No samples")
-                            .font(.caption2.monospacedDigit()).foregroundStyle(.white)
-                    }
-                    .frame(width: 94).padding(8)
-                    .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Local audio output level")
-                    Button(model.isMuted ? "MIC OFF" : "MIC ON") { Task { await model.toggleMute() } }
-                        .disabled(!model.isReady || model.isBusy)
-                    if showFlashlightButton && model.hasTorch {
-                        Button { Task { await model.toggleTorch() } } label: {
-                            Image(systemName: model.isTorchOn ? "flashlight.on.fill" : "flashlight.off.fill")
-                        }.accessibilityLabel(model.isTorchOn ? "Turn flashlight off" : "Turn flashlight on")
-                            .disabled(!model.isReady || model.isBusy)
-                    }
+                    if leftHandedMode { cameraControls } else { microphoneControls }
                     Spacer()
                     if model.isConnecting {
                         Button("CANCEL") { Task { await model.stop() } }
@@ -90,8 +73,7 @@ struct BroadcastView: View {
                         Button("START") { confirmLive = true }.disabled(!model.isReady)
                     }
                     Spacer()
-                    Button(model.isFront ? "REAR CAMERA" : "SELFIE") { Task { await model.switchCamera() } }
-                        .disabled(!model.isReady || model.isBusy)
+                    if leftHandedMode { microphoneControls } else { cameraControls }
                 }
                 .buttonStyle(.borderedProminent).tint(nabGreen).foregroundStyle(.black)
             }.padding(20)
@@ -120,13 +102,17 @@ struct BroadcastView: View {
                     Section("Hub") {
                         Toggle("Live FPS", isOn: $showLiveFPS)
                             .accessibilityIdentifier("hub-fps-toggle")
-                        Toggle("Settings on left", isOn: $settingsOnLeft)
+                        Toggle("Left-handed mode", isOn: $leftHandedMode)
+                            .accessibilityIdentifier("hub-left-handed-toggle")
+                        Text("Moves camera controls to the left, microphone and chat to the right.")
+                            .font(.caption).foregroundStyle(nabPurple)
+                        Toggle("Swap Settings and status", isOn: $settingsOnLeft)
                             .accessibilityIdentifier("hub-swap-toggle")
-                        Text("Swaps only the purple Settings button and status panel. Chat and camera controls stay put. Saved on this device.")
+                        Text("Swaps only Settings and the status panel relative to your handedness layout.")
                             .font(.caption).foregroundStyle(nabPurple)
                         Toggle("Show flashlight button", isOn: $showFlashlightButton)
                             .accessibilityIdentifier("hub-flashlight-toggle")
-                        Text("Adds a shortcut beside the microphone when the camera has a flashlight. Hiding it does not turn the light off; Camera settings still controls it.")
+                        Text("Shows above Chat when the camera has a flashlight. Camera settings also controls the light.")
                             .font(.caption).foregroundStyle(nabPurple)
                     }
                     }
@@ -369,6 +355,55 @@ struct BroadcastView: View {
             }
             .accessibilityIdentifier("settings-tabs")
             .onChange(of: settingsPage) { page in reader.scrollTo(page, anchor: .center) }
+        }
+    }
+
+    private var microphoneControls: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(model.isMuted ? "MUTED" : (model.audioLevel?.clipped == true ? "CLIP" : "AUDIO"))
+                    .font(.caption2.bold()).foregroundStyle(.white)
+                ProgressView(value: model.isMuted ? 0 : (model.audioLevel?.fraction ?? 0))
+                    .tint(model.audioLevel?.clipped == true ? .red : nabGreen)
+                Text(model.audioLevel.map { String(format: "PK %.0f dBFS", $0.peakDBFS) } ?? "No samples")
+                    .font(.caption2.monospacedDigit()).foregroundStyle(.white)
+            }
+            .frame(width: 94).padding(8)
+            .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Local audio output level")
+            Button(model.isMuted ? "MIC OFF" : "MIC ON") { Task { await model.toggleMute() } }
+                .disabled(!model.isReady || model.isBusy)
+        }
+    }
+
+    private var cameraControls: some View {
+        VStack(spacing: 8) {
+            if showFlashlightButton && model.hasTorch {
+                Button { Task { await model.toggleTorch() } } label: {
+                    Image(systemName: model.isTorchOn ? "flashlight.on.fill" : "flashlight.off.fill")
+                }.accessibilityLabel(model.isTorchOn ? "Turn flashlight off" : "Turn flashlight on")
+                    .disabled(!model.isReady || model.isBusy)
+            }
+            Button(chat.isEnabled ? "CHAT ON" : "CHAT OFF") {
+                if chat.isEnabled { chat.disconnect() }
+                else if chatChannel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    settingsPage = .overlay; showSettings = true
+                } else { chat.connect(channel: chatChannel) }
+            }.accessibilityIdentifier("preview-chat-toggle")
+            if model.maximumZoom > model.minimumZoom {
+                HStack {
+                    ForEach([1.0, 3.0], id: \.self) { zoom in
+                        if zoom >= model.minimumZoom && zoom <= model.maximumZoom {
+                            Button("\(Int(zoom))×") { Task { await model.setZoom(zoom) } }
+                                .accessibilityLabel("Zoom \(Int(zoom)) times")
+                                .disabled(!model.isReady || model.isBusy)
+                        }
+                    }
+                }
+            }
+            Button(model.isFront ? "REAR CAMERA" : "SELFIE") { Task { await model.switchCamera() } }
+                .disabled(!model.isReady || model.isBusy)
         }
     }
 
