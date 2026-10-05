@@ -259,7 +259,10 @@ final class SettingsUITests: XCTestCase {
         if control.exists { control.tap() }
         else { row.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: row)
-        let result = XCTWaiter.wait(for: [changed], timeout: 5)
+        // Loaded hosted simulators can take several seconds to publish the new
+        // accessibility snapshot even when the visible switch already changed.
+        // Still require the requested value; never retry by blindly toggling it.
+        let result = XCTWaiter.wait(for: [changed], timeout: 20)
         attach("settings-\(name)-after-toggle-\(value)", app: app)
         XCTAssertEqual(result, .completed)
         XCTAssertEqual(row.value as? String, value)
@@ -268,7 +271,7 @@ final class SettingsUITests: XCTestCase {
     private func fullyVisible(_ element: XCUIElement, in app: XCUIApplication, form: XCUIElement) -> Bool {
         guard element.exists, element.isHittable else { return false }
         let frame = element.frame
-        return frame.minY >= app.navigationBars["Settings"].frame.maxY + 8
+        return frame.minY >= max(app.navigationBars["Settings"].frame.maxY, form.frame.minY) + 8
             && frame.maxY <= form.frame.maxY - 24
     }
 

@@ -7,6 +7,10 @@ on:
         type: choice
         options: [iPhone, iPad]
         default: iPhone
+      ui_only:
+        description: UI-only rerun for test-only changes (full checks remain the default)
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
@@ -16,10 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Test local signing preflight with synthetic profiles only
+        if: ${{ !inputs.ui_only }}
         run: |
           python3 -m unittest discover -s ios/scripts -p 'test_*.py' -v
           bash -n ios/scripts/archive-local.sh
       - name: Test destinations, chat and connection profiles
+        if: ${{ !inputs.ui_only }}
         working-directory: ios/Core
         run: swift test
       - name: Install project generator
@@ -28,6 +34,7 @@ jobs:
         working-directory: ios
         run: xcodegen generate
       - name: Compile for simulator
+        if: ${{ !inputs.ui_only }}
         working-directory: ios
         run: >-
           xcodebuild -project NabcamIOS.xcodeproj -scheme NabcamIOS
@@ -35,6 +42,7 @@ jobs:
           -derivedDataPath build/validation -configuration Debug
           ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
       - name: Exercise Keychain, overlays and audio on iOS simulator
+        if: ${{ !inputs.ui_only }}
         working-directory: ios
         run: |
           SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
@@ -44,6 +52,7 @@ jobs:
             -parallel-testing-enabled NO ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
       - name: Compile for iPhone
         id: device_build
+        if: ${{ !inputs.ui_only }}
         working-directory: ios
         run: >-
           xcodebuild -project NabcamIOS.xcodeproj -scheme NabcamIOS
@@ -51,6 +60,7 @@ jobs:
           -derivedDataPath build/validation -configuration Release
           ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
       - name: Decode the synthetic receiver audio and video
+        if: ${{ !inputs.ui_only }}
         working-directory: ios
         run: |
           if ! command -v ffprobe >/dev/null; then brew install ffmpeg; fi
@@ -69,7 +79,7 @@ jobs:
           PY
           python3 scripts/verify_av_fixture.py build/srtla-av-format-change.ts
       - name: Exercise Settings UI and capture screenshots
-        if: ${{ !cancelled() && steps.device_build.outcome == 'success' }}
+        if: ${{ !cancelled() && (inputs.ui_only || steps.device_build.outcome == 'success') }}
         working-directory: ios
         env:
           UI_DEVICE: ${{ inputs.ui_device || 'iPhone' }}
