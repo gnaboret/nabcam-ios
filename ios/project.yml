@@ -54,8 +54,12 @@ targets:
       - path: NabcamStorageHost
         excludes: [Simulator.entitlements]
       - path: NabcamIOS/ConnectionProfiles.swift
+      - path: NabcamIOS/StreamWatermarks.swift
+      - path: NabcamIOS/OverlayCorner.swift
     dependencies:
       - package: NabcamCore
+      - package: HaishinKit
+        product: HaishinKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-host
@@ -70,6 +74,8 @@ targets:
     dependencies:
       - package: NabcamCore
       - target: NabcamStorageHost
+      - package: HaishinKit
+        product: HaishinKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-tests

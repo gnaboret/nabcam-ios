@@ -2,12 +2,6 @@ import Foundation
 import HaishinKit
 import UIKit
 
-enum ClockCorner: String, CaseIterable, Identifiable, Sendable {
-    case topLeft = "Top left", topRight = "Top right"
-    case bottomLeft = "Bottom left", bottomRight = "Bottom right"
-    var id: String { rawValue }
-}
-
 /// Lives entirely on the compositor actor, including its formatter and text raster.
 @ScreenActor
 final class StreamClock {
