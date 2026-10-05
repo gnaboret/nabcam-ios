@@ -140,8 +140,22 @@ struct BroadcastView: View {
                         Text(chat.status).font(.caption).foregroundStyle(.secondary)
                         Text("Preview chat only—it is not embedded in the outgoing video yet. Chat disconnects when you leave the app.").font(.caption)
                     }
+                    Section("Stream overlays") {
+                        Toggle("Clock in video", isOn: Binding(get: { model.clockEnabled }, set: { value in
+                            Task { await model.configureClock(enabled: value, corner: model.clockCorner) }
+                        })).disabled(model.isLive || model.isBusy)
+                        if model.clockEnabled {
+                            Picker("Clock position", selection: Binding(get: { model.clockCorner }, set: { corner in
+                                Task { await model.configureClock(enabled: true, corner: corner) }
+                            })) {
+                                ForEach(ClockCorner.allCases) { Text($0.rawValue).tag($0) }
+                            }.disabled(model.isLive || model.isBusy)
+                        }
+                        Text("Local time in preview and outgoing video. Change before going live; preview restarts. Compositing performance still needs iPhone testing.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     Section("First iOS build") {
-                        Text("Plain SRT is not SRTLA. Bonding, USB cameras, stream overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
+                        Text("Plain SRT is not SRTLA. Bonding, USB cameras, image/browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
                         Button("Restart camera preview") { Task { await model.setActive(false); await model.setActive(true) } }
                             .disabled(model.isLive || model.isBusy)
                     }

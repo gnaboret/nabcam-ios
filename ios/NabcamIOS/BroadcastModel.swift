@@ -22,6 +22,8 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var minimumZoom = 1.0
     @Published private(set) var hasTorch = false
     @Published private(set) var isTorchOn = false
+    @Published private(set) var clockEnabled = false
+    @Published private(set) var clockCorner: ClockCorner = .topRight
     @Published var errorMessage: String?
     let mixer = MediaMixer()
     private var session: (any Session)?
@@ -29,6 +31,8 @@ final class BroadcastModel: ObservableObject {
     private var lifecycleTask: Task<Void, Never>?
     private var generation = 0
     private var active = true
+    private var streamClock: StreamClock?
+    private var clockTask: Task<Void, Never>?
 
     private func prepare() async {
         guard active, !isReady, !isBusy else { return }
@@ -53,10 +57,21 @@ final class BroadcastModel: ObservableObject {
                   let microphone = AVCaptureDevice.default(for: .audio) else { throw CaptureError.unavailable }
             try await mixer.attachVideo(video)
             try await mixer.attachAudio(microphone)
+            // Offscreen mode controls output cadence separately from camera capture.
+            try await mixer.configuration(video: 0) { try $0.setFrameRate(30) }
+            var mixing = await mixer.videoMixerSettings
+            mixing.mode = clockEnabled ? .offscreen : .passthrough
+            await mixer.setVideoMixerSettings(mixing)
+            if clockEnabled {
+                let clock = await StreamClock()
+                try await clock.install(on: mixer.screen, corner: clockCorner)
+                streamClock = clock
+            }
             try await mixer.setFrameRate(30)
             guard active else { await releaseCapture(); return }
             await mixer.startRunning()
             isReady = true
+            startClockUpdates()
             await refreshCameraControls()
             status = "Preview · 720p · requested 30 FPS"
         } catch {
@@ -165,6 +180,7 @@ final class BroadcastModel: ObservableObject {
         do {
             try await mixer.attachVideo(device)
             isFront.toggle()
+            try await mixer.configuration(video: 0) { try $0.setFrameRate(30) }
             try await mixer.setFrameRate(30)
             await refreshCameraControls()
         } catch {
@@ -284,7 +300,33 @@ final class BroadcastModel: ObservableObject {
         await next.value
     }
 
+    func configureClock(enabled: Bool, corner: ClockCorner) async {
+        guard active, !isLive, !isBusy else { return }
+        clockEnabled = enabled
+        clockCorner = corner
+        await setActive(false)
+        // Do not restart capture if iOS sent the app to the background during teardown.
+        guard UIApplication.shared.applicationState != .background else { return }
+        await setActive(true)
+    }
+
+    private func startClockUpdates() {
+        clockTask?.cancel()
+        guard let clock = streamClock else { clockTask = nil; return }
+        clockTask = Task {
+            while !Task.isCancelled {
+                await clock.update()
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch { break }
+            }
+        }
+    }
+
     private func releaseCapture() async {
+        clockTask?.cancel()
+        clockTask = nil
+        if let clock = streamClock { await clock.remove() }
+        streamClock = nil
         await turnOffTorch()
         await mixer.stopRunning()
         try? await mixer.attachVideo(nil)
