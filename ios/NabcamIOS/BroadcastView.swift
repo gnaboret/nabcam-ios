@@ -90,7 +90,7 @@ struct BroadcastView: View {
             if phase == .background { chat.disconnect(); Task { await model.setActive(false) } }
             else if phase == .active { Task { await model.setActive(true) } }
         }
-        .sheet(isPresented: $showSettings) {
+        .fullScreenCover(isPresented: $showSettings) {
             NavigationStack {
                 Form {
                     Section("Camera") {
@@ -220,7 +220,9 @@ struct BroadcastView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
+                .accessibilityIdentifier("settings-form")
                 .navigationTitle("Settings")
+                .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
             }.tint(nabPurple)
             .fileImporter(isPresented: $importWatermark, allowedContentTypes: [.png, .jpeg]) { result in

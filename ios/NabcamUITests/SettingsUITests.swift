@@ -4,7 +4,6 @@ import XCTest
 final class SettingsUITests: XCTestCase {
     func testSettingsCanBeOpenedScrolledAndClosed() {
         continueAfterFailure = false
-        XCUIDevice.shared.orientation = .landscapeRight
         let app = XCUIApplication()
         app.launchArguments = ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]
         addUIInterruptionMonitor(withDescription: "Capture permission dialogs") { alert in
@@ -15,6 +14,7 @@ final class SettingsUITests: XCTestCase {
             return false
         }
         app.launch()
+        XCUIDevice.shared.orientation = .landscapeRight
         // Simulator capture may be unavailable; acknowledge the real error rather
         // than replacing production capture with a fake-success test mode.
         let settings = app.buttons["Settings"]
@@ -25,19 +25,21 @@ final class SettingsUITests: XCTestCase {
         }
         if !app.navigationBars["Settings"].exists { settings.tap() }
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
+        let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 10))
         attach("settings-camera", app: app)
         let addWatermark = app.buttons["Add image watermark"]
         for _ in 0..<12 {
             if addWatermark.exists && addWatermark.isHittable { break }
-            app.swipeUp()
+            scroll(form)
         }
+        attach("settings-overlays", app: app)
         XCTAssertTrue(addWatermark.exists)
         XCTAssertTrue(addWatermark.isHittable)
-        attach("settings-overlays", app: app)
         let diagnostics = app.buttons["Share diagnostic timeline"]
         for _ in 0..<8 {
             if diagnostics.exists && diagnostics.isHittable { break }
-            app.swipeUp()
+            scroll(form)
         }
         XCTAssertTrue(diagnostics.exists)
         attach("settings-diagnostics", app: app)
@@ -48,9 +50,19 @@ final class SettingsUITests: XCTestCase {
     }
 
     private func attach(_ name: String, app: XCUIApplication) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
+        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+        let hierarchy = XCTAttachment(string: app.debugDescription)
+        hierarchy.name = name + "-accessibility"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+    }
+
+    private func scroll(_ form: XCUIElement) {
+        let lower = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
+        let upper = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
+        lower.press(forDuration: 0.05, thenDragTo: upper)
     }
 }
