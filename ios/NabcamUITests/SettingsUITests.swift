@@ -46,6 +46,9 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
         let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10))
+        let fps = app.switches["hub-fps-toggle"]
+        XCTAssertEqual(fps.value as? String, "1")
+        setSwitch(fps, to: "0", app: app, name: "fps")
         let flashlightShortcut = app.switches["hub-flashlight-toggle"]
         XCTAssertTrue(fullyVisible(flashlightShortcut, in: app, form: form))
         XCTAssertEqual(flashlightShortcut.value as? String, "0")
@@ -67,6 +70,8 @@ final class SettingsUITests: XCTestCase {
         attach("preview-hub-settings-on-left", app: app)
         settings.tap()
         XCTAssertTrue(hubSwap.waitForExistence(timeout: 5))
+        XCTAssertEqual(fps.value as? String, "0")
+        setSwitch(fps, to: "1", app: app, name: "fps")
         XCTAssertEqual(flashlightShortcut.value as? String, "1")
         setSwitch(flashlightShortcut, to: "0", app: app, name: "flashlight-shortcut")
         setSwitch(hubSwap, to: "0", app: app, name: "hub")
@@ -75,11 +80,21 @@ final class SettingsUITests: XCTestCase {
         XCTAssertLessThan(hud.frame.maxX, settings.frame.minX)
         settings.tap()
         XCTAssertTrue(form.waitForExistence(timeout: 5))
+        selectPage("camera", app: app)
         attach("settings-camera", app: app)
         if cameraUnavailable {
             XCTAssertFalse(app.switches["Lock focus"].exists)
             XCTAssertFalse(app.switches["Lock exposure"].exists)
         }
+        selectPage("connection", app: app)
+        let nameField = app.textFields["Connection name"]
+        XCTAssertTrue(nameField.waitForExistence(timeout: 5))
+        nameField.tap()
+        nameField.typeText("Unsaved test connection")
+        selectPage("video", app: app)
+        selectPage("connection", app: app)
+        XCTAssertEqual(nameField.value as? String, "Unsaved test connection",
+                       "Changing settings pages must not discard connection edits")
         let relayToggle = app.switches["experimental-srtla-toggle"]
         for _ in 0..<24 {
             if fullyVisible(relayToggle, in: app, form: form) { break }
@@ -103,6 +118,7 @@ final class SettingsUITests: XCTestCase {
             scroll(form, toward: relayToggle)
         }
         setSwitch(relayToggle, to: "0", app: app)
+        selectPage("video", app: app)
         let codec = app.descendants(matching: .any).matching(identifier: "video-codec-picker").firstMatch
         for _ in 0..<24 {
             if fullyVisible(codec, in: app, form: form) { break }
@@ -111,6 +127,7 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(fullyVisible(codec, in: app, form: form))
         XCTAssertTrue(codec.label.contains("H.264") || (codec.value as? String)?.contains("H.264") == true)
         attach("settings-video-codec", app: app)
+        selectPage("audio", app: app)
         let audio = app.descendants(matching: .any).matching(identifier: "audio-bitrate-picker").firstMatch
         for _ in 0..<24 {
             if fullyVisible(audio, in: app, form: form) { break }
@@ -119,6 +136,8 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(fullyVisible(audio, in: app, form: form))
         XCTAssertTrue(audio.label.contains("96 kbps") || (audio.value as? String)?.contains("96 kbps") == true)
         attach("settings-audio", app: app)
+        selectPage("overlay", app: app)
+        XCTAssertTrue(app.textFields["Kick channel name"].exists)
         let addWatermark = app.buttons["Add image watermark"]
         for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }
@@ -129,6 +148,7 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(addWatermark.exists)
         XCTAssertTrue(addWatermark.isHittable)
         XCTAssertTrue(fullyVisible(addWatermark, in: app, form: form))
+        selectPage("advanced", app: app)
         let diagnostics = app.buttons["Share diagnostic timeline"]
         for _ in 0..<24 {
             if fullyVisible(diagnostics, in: app, form: form) { break }
@@ -154,6 +174,26 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         XCTAssertFalse(app.navigationBars["Settings"].exists)
         attach("preview-hud-simulator-no-camera", app: app)
+    }
+
+    private func selectPage(_ name: String, app: XCUIApplication) {
+        let tab = app.buttons["settings-tab-\(name)"]
+        let tabs = app.scrollViews["settings-tabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 5))
+        // Return to the leading edge before searching, so narrow phones and iPads
+        // exercise the same real scrollable navigation without coordinate taps.
+        for _ in 0..<3 {
+            if tab.isHittable { break }
+            tabs.swipeRight()
+        }
+        for _ in 0..<6 {
+            if tab.isHittable { break }
+            tabs.swipeLeft()
+        }
+        XCTAssertTrue(tab.isHittable, "Settings page should be reachable: \(name)")
+        tab.tap()
+        XCTAssertTrue(tab.isSelected)
+        XCTAssertTrue(app.buttons["Done"].isHittable)
     }
 
     private func attach(_ name: String, app: XCUIApplication) {

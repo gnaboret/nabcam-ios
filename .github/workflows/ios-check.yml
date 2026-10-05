@@ -1,6 +1,12 @@
 name: NABCAM iOS checks (unsigned)
 on:
   workflow_dispatch:
+    inputs:
+      ui_device:
+        description: Device family for Settings UI verification
+        type: choice
+        options: [iPhone, iPad]
+        default: iPhone
 permissions:
   contents: read
 jobs:
@@ -65,8 +71,10 @@ jobs:
       - name: Exercise Settings UI and capture screenshots
         if: ${{ !cancelled() && steps.device_build.outcome == 'success' }}
         working-directory: ios
+        env:
+          UI_DEVICE: ${{ inputs.ui_device || 'iPhone' }}
         run: |
-          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
+          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,os,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith(os.environ["UI_DEVICE"])))')
           xcodebuild test -project NabcamIOS.xcodeproj -scheme NabcamUITests \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath build/validation -resultBundlePath build/ui-results.xcresult \

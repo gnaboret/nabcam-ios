@@ -7,6 +7,12 @@ import NabcamCore
 private let nabPurple = Color(red: 0.64, green: 0.43, blue: 1)
 private let nabGreen = Color(red: 0.05, green: 0.81, blue: 0.63)
 
+private enum SettingsPage: String, CaseIterable, Identifiable {
+    case hub = "Hub", camera = "Camera", connection = "Connection", video = "Video"
+    case audio = "Audio", overlay = "Overlay", advanced = "Advanced"
+    var id: String { rawValue }
+}
+
 struct BroadcastView: View {
     @StateObject private var model = BroadcastModel()
     @StateObject private var chat = KickChatService()
@@ -24,8 +30,10 @@ struct BroadcastView: View {
     @State private var audioBitrate: AudioBitrate = .kbps96
     @State private var chatChannel = ""
     @State private var importWatermark = false
+    @State private var settingsPage: SettingsPage = .hub
     @AppStorage("hub.settingsOnLeft") private var settingsOnLeft = false
     @AppStorage("hub.showFlashlightButton") private var showFlashlightButton = false
+    @AppStorage("hub.showLiveFPS") private var showLiveFPS = true
 
     var body: some View {
         ZStack {
@@ -105,8 +113,13 @@ struct BroadcastView: View {
         }
         .fullScreenCover(isPresented: $showSettings) {
             NavigationStack {
+                VStack(spacing: 0) {
+                settingsNavigation
                 Form {
+                    if settingsPage == .hub {
                     Section("Hub") {
+                        Toggle("Live FPS", isOn: $showLiveFPS)
+                            .accessibilityIdentifier("hub-fps-toggle")
                         Toggle("Settings on left", isOn: $settingsOnLeft)
                             .accessibilityIdentifier("hub-swap-toggle")
                         Text("Swaps only the purple Settings button and status panel. Chat and camera controls stay put. Saved on this device.")
@@ -116,6 +129,8 @@ struct BroadcastView: View {
                         Text("Adds a shortcut beside the microphone when the camera has a flashlight. Hiding it does not turn the light off; Camera settings still controls it.")
                             .font(.caption).foregroundStyle(nabPurple)
                     }
+                    }
+                    if settingsPage == .camera {
                     Section("Camera") {
                         Toggle("Mirror front camera", isOn: Binding(get: { model.mirrorFrontCamera }, set: { value in
                             Task { await model.setFrontCameraMirrored(value) }
@@ -151,6 +166,8 @@ struct BroadcastView: View {
                             })).disabled(!model.isReady || model.isBusy)
                         } else { Text("This camera has no flashlight.").font(.caption) }
                     }
+                    }
+                    if settingsPage == .connection {
                     Section("Connection") {
                         Menu("Saved connections") {
                             Button("New connection") {
@@ -194,6 +211,8 @@ struct BroadcastView: View {
                         }
                         if let profileNotice { Text(profileNotice).font(.caption).foregroundStyle(nabPurple) }
                     }
+                    }
+                    if settingsPage == .video {
                     Section("Video") {
                         Picker("Video codec", selection: $videoCodec) {
                             Text("H.264").tag(VideoCodecChoice.h264)
@@ -215,6 +234,8 @@ struct BroadcastView: View {
                         }.disabled(model.isLive || model.isBusy)
                         Text("This selects the requested average rate. The HUD measures camera and compositor output separately—not the receiver’s FPS. Unsupported camera modes show an error. AAC audio; no adaptive controller yet.").font(.caption)
                     }
+                    }
+                    if settingsPage == .audio {
                     Section("Audio") {
                         Picker("AAC bitrate", selection: $audioBitrate) {
                             ForEach(AudioBitrate.allCases) { Text($0.label).tag($0) }
@@ -226,6 +247,8 @@ struct BroadcastView: View {
                             if value != model.isMuted { Task { await model.toggleMute() } }
                         })).disabled(!model.isReady || model.isBusy)
                     }
+                    }
+                    if settingsPage == .overlay {
                     Section("Chat") {
                         TextField("Kick channel name", text: $chatChannel)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -278,7 +301,9 @@ struct BroadcastView: View {
                         Text("Local time in preview and outgoing video. Change before going live; preview restarts. Compositing performance still needs iPhone testing.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    Section("First iOS build") {
+                    }
+                    if settingsPage == .advanced {
+                    Section("About this iOS build") {
                         NavigationLink("Open-source acknowledgments") { AcknowledgmentsView() }
                         Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
                         Text("SRTLA is opt-in and experimental. Dual-SIM bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
@@ -291,8 +316,11 @@ struct BroadcastView: View {
                         Text("Last 300 events: FPS, frame gaps and SRTLA queues, local send rates, retries and relay ACK timing. No stream keys or chat contents. Local sends do not prove receiver delivery or audio sync.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    }
                 }
+                .id(settingsPage)
                 .accessibilityIdentifier("settings-form")
+                }
                 .navigationTitle("Settings")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
@@ -320,6 +348,30 @@ struct BroadcastView: View {
         } message: { Text(model.errorMessage ?? "") }
     }
 
+    private var settingsNavigation: some View {
+        ScrollViewReader { reader in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(SettingsPage.allCases) { page in
+                        Button { settingsPage = page } label: {
+                            Text(page.rawValue).font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 16).frame(minHeight: 44)
+                                .foregroundStyle(settingsPage == page ? Color.black : nabPurple)
+                                .background(settingsPage == page ? nabPurple : Color.secondary.opacity(0.12),
+                                            in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("settings-tab-\(page.rawValue.lowercased())")
+                        .accessibilityAddTraits(settingsPage == page ? .isSelected : [])
+                        .id(page)
+                    }
+                }.padding(.horizontal, 16).padding(.vertical, 8)
+            }
+            .accessibilityIdentifier("settings-tabs")
+            .onChange(of: settingsPage) { page in reader.scrollTo(page, anchor: .center) }
+        }
+    }
+
     private var settingsButton: some View {
         Button { showSettings = true } label: {
             Image(systemName: "gearshape.fill").frame(width: 48, height: 48)
@@ -332,9 +384,10 @@ struct BroadcastView: View {
             Text("GNAB CAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
             Text(model.status).font(.caption).foregroundStyle(model.isLive ? nabGreen : .white)
                 .accessibilityIdentifier("capture-status")
-            if let capture = model.captureFPS, let mixed = model.mixedFPS {
+            if showLiveFPS, let capture = model.captureFPS, let mixed = model.mixedFPS {
                 Text(String(format: "Camera %.1f · Output %.1f FPS", capture, mixed))
                     .font(.caption.monospacedDigit()).foregroundStyle(.white)
+                    .accessibilityIdentifier("live-fps-readout")
             }
             if let paths = model.relayPathStatus {
                 Text(paths).font(.caption2).foregroundStyle(.white)
