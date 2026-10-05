@@ -49,6 +49,16 @@ final class SettingsUITests: XCTestCase {
         let fps = app.switches["hub-fps-toggle"]
         XCTAssertEqual(fps.value as? String, "1")
         setSwitch(fps, to: "0", app: app, name: "fps")
+        let resolution = app.switches["hub-resolution-toggle"]
+        XCTAssertEqual(resolution.value as? String, "1")
+        setSwitch(resolution, to: "0", app: app, name: "resolution")
+        let grid = app.switches["hub-grid-toggle"]
+        for _ in 0..<8 {
+            if fullyVisible(grid, in: app, form: form) { break }
+            scroll(form, toward: grid)
+        }
+        XCTAssertEqual(grid.value as? String, "0")
+        setSwitch(grid, to: "1", app: app, name: "grid")
         let flashlightShortcut = app.switches["hub-flashlight-toggle"]
         for _ in 0..<8 {
             if fullyVisible(flashlightShortcut, in: app, form: form) { break }
@@ -72,6 +82,8 @@ final class SettingsUITests: XCTestCase {
         XCTAssertEqual(app.buttons["MIC ON"].frame, microphoneFrame)
         XCTAssertEqual(app.buttons["SELFIE"].frame, cameraFrame)
         if cameraUnavailable {
+            XCTAssertFalse(app.staticTexts["capture-resolution-readout"].exists,
+                           "Requested resolution must not be presented as observed camera output")
             XCTAssertFalse(app.buttons["Turn flashlight on"].exists,
                            "A shortcut preference must not invent unsupported camera hardware")
         }
@@ -84,6 +96,18 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertEqual(fps.value as? String, "0")
         setSwitch(fps, to: "1", app: app, name: "fps")
+        for _ in 0..<8 {
+            if fullyVisible(resolution, in: app, form: form) { break }
+            scroll(form, toward: resolution)
+        }
+        XCTAssertEqual(resolution.value as? String, "0")
+        setSwitch(resolution, to: "1", app: app, name: "resolution")
+        for _ in 0..<8 {
+            if fullyVisible(grid, in: app, form: form) { break }
+            scroll(form, toward: grid)
+        }
+        XCTAssertEqual(grid.value as? String, "1")
+        setSwitch(grid, to: "0", app: app, name: "grid")
         for _ in 0..<8 {
             if fullyVisible(flashlightShortcut, in: app, form: form) { break }
             scroll(form, toward: flashlightShortcut)

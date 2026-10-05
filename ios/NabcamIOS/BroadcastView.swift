@@ -35,11 +35,16 @@ struct BroadcastView: View {
     @AppStorage("hub.showFlashlightButton") private var showFlashlightButton = false
     @AppStorage("hub.showLiveFPS") private var showLiveFPS = true
     @AppStorage("hub.leftHandedMode") private var leftHandedMode = false
+    @AppStorage("hub.showResolution") private var showResolution = true
+    @AppStorage("hub.showCompositionGrid") private var showCompositionGrid = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             CapturePreview(model: model).ignoresSafeArea()
+            if showCompositionGrid, model.isReady, !model.isBusy, let size = model.previewDimensions {
+                PreviewCompositionGrid(frameSize: size).ignoresSafeArea()
+            }
             VStack {
                 HStack(alignment: .top) {
                     if settingsOnLeft != leftHandedMode {
@@ -102,6 +107,12 @@ struct BroadcastView: View {
                     Section("Hub") {
                         Toggle("Live FPS", isOn: $showLiveFPS)
                             .accessibilityIdentifier("hub-fps-toggle")
+                        Toggle("Show resolution", isOn: $showResolution)
+                            .accessibilityIdentifier("hub-resolution-toggle")
+                        Toggle("Rule-of-thirds grid", isOn: $showCompositionGrid)
+                            .accessibilityIdentifier("hub-grid-toggle")
+                        Text("Preview guide only—not included in your broadcast.")
+                            .font(.caption).foregroundStyle(nabPurple)
                         Toggle("Left-handed mode", isOn: $leftHandedMode)
                             .accessibilityIdentifier("hub-left-handed-toggle")
                         Text("Moves camera controls to the left, microphone and chat to the right.")
@@ -419,6 +430,11 @@ struct BroadcastView: View {
             Text("GNAB CAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
             Text(model.status).font(.caption).foregroundStyle(model.isLive ? nabGreen : .white)
                 .accessibilityIdentifier("capture-status")
+            if showResolution, let size = model.captureDimensions {
+                Text(size.label).font(.caption.monospacedDigit()).foregroundStyle(.white)
+                    .accessibilityLabel("Camera resolution \(size.width) by \(size.height)")
+                    .accessibilityIdentifier("capture-resolution-readout")
+            }
             if showLiveFPS, let capture = model.captureFPS, let mixed = model.mixedFPS {
                 Text(String(format: "Camera %.1f · Output %.1f FPS", capture, mixed))
                     .font(.caption.monospacedDigit()).foregroundStyle(.white)

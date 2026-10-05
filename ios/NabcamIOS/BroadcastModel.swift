@@ -34,6 +34,8 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var overlayStorageMessage: String?
     @Published private(set) var captureFPS: Double?
     @Published private(set) var mixedFPS: Double?
+    @Published private(set) var captureDimensions: VideoFrameSize?
+    @Published private(set) var previewDimensions: VideoFrameSize?
     @Published private(set) var audioLevel: AudioLevel?
     @Published private(set) var experimentalSrtlaEnabled = false
     @Published private(set) var relayPathStatus: String?
@@ -762,6 +764,8 @@ final class BroadcastModel: ObservableObject {
                 let mixed = self.mixedMonitor.snapshot()
                 self.captureFPS = capture?.fps
                 self.mixedFPS = mixed?.fps
+                self.captureDimensions = self.captureMonitor.dimensions()
+                self.previewDimensions = self.mixedMonitor.dimensions()
                 samples += 1
                 if samples == 1 || samples % 10 == 0, let capture, let mixed {
                     self.diagnostics.append(.frameRates(camera: capture.fps, mixed: mixed.fps,
@@ -817,6 +821,8 @@ final class BroadcastModel: ObservableObject {
         await mixer.removeOutput(mixedMonitor)
         captureFPS = nil
         mixedFPS = nil
+        captureDimensions = nil
+        previewDimensions = nil
         clockTask?.cancel()
         clockTask = nil
         if let clock = streamClock { await clock.remove() }
