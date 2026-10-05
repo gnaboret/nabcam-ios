@@ -6,12 +6,14 @@ private let nabGreen = Color(red: 0.05, green: 0.81, blue: 0.63)
 
 struct BroadcastView: View {
     @StateObject private var model = BroadcastModel()
+    @StateObject private var chat = KickChatService()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
     @State private var confirmLive = false
     // Credentials stay in memory until a Keychain-backed profile store is added.
     @State private var destination = ""
     @State private var bitrate = 1600
+    @State private var chatChannel = ""
 
     var body: some View {
         ZStack {
@@ -29,6 +31,12 @@ struct BroadcastView: View {
                         .background(nabPurple, in: Circle()).accessibilityLabel("Settings")
                 }
                 Spacer()
+                if chat.isEnabled {
+                    HStack {
+                        ChatOverlayView(chat: chat).frame(maxWidth: 380)
+                        Spacer()
+                    }.frame(maxHeight: 200, alignment: .bottom).clipped()
+                }
                 HStack {
                     Button(model.isMuted ? "MIC OFF" : "MIC ON") { Task { await model.toggleMute() } }
                         .disabled(!model.isReady || model.isBusy)
@@ -51,7 +59,7 @@ struct BroadcastView: View {
         }
         .task { await model.setActive(true) }
         .onChange(of: scenePhase) { phase in
-            if phase == .background { Task { await model.setActive(false) } }
+            if phase == .background { chat.disconnect(); Task { await model.setActive(false) } }
             else if phase == .active { Task { await model.setActive(true) } }
         }
         .sheet(isPresented: $showSettings) {
@@ -69,8 +77,18 @@ struct BroadcastView: View {
                         }.disabled(model.isLive || model.isBusy)
                         Text("720p · requested 30 FPS · H.264 + AAC. Fixed bitrate target; no adaptive controller yet.").font(.caption)
                     }
+                    Section("Chat") {
+                        TextField("Kick channel name", text: $chatChannel)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        Button(chat.isEnabled ? "Disconnect chat" : "Connect chat") {
+                            if chat.isEnabled { chat.disconnect() }
+                            else { chat.connect(channel: chatChannel) }
+                        }
+                        Text(chat.status).font(.caption).foregroundStyle(.secondary)
+                        Text("Preview chat only—it is not embedded in the outgoing video yet. Chat disconnects when you leave the app.").font(.caption)
+                    }
                     Section("First iOS build") {
-                        Text("Plain SRT is not SRTLA. Bonding, USB cameras, chat, overlays, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
+                        Text("Plain SRT is not SRTLA. Bonding, USB cameras, stream overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
                         Button("Restart camera preview") { Task { await model.setActive(false); await model.setActive(true) } }
                             .disabled(model.isLive || model.isBusy)
                     }
