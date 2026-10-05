@@ -22,6 +22,31 @@ final class SrtlaRegistrationTests: XCTestCase {
         XCTAssertTrue(state.poll(at: 2000).allSatisfy { $0.bytes == SrtlaWire.control(SrtlaWire.keepalive) })
     }
 
+    func testSilentOwnerHandoffPreservesStandbySocketUntilItsReply() throws {
+        var state = try makeState()
+        var standby = SrtlaSocketRecovery()
+        standby.opened(at: 0); standby.ready(at: 0)
+        XCTAssertEqual(state.poll(at: 0).map(\.path), [1])
+        // Match the session's poll -> send -> recover ordering exactly. Both
+        // sockets were ready at zero, but only the owner sent a request then.
+        let handoff = state.poll(at: 4000)
+        XCTAssertEqual(handoff.map(\.path), [2])
+        standby.registrationSent(at: 4000)
+        XCTAssertFalse(standby.shouldReplace(at: 4000, registered: false, socketReady: true,
+                                            serverRetryAfter: state.retryDeadline(2)))
+        let joins = state.receive(SrtlaWire.control(SrtlaWire.reg2, payload: issuedGroup), on: 2, at: 4010)
+        standby.received(at: 4010, registered: state.isRegistered(2))
+        XCTAssertEqual(joins.map(\.path), [2])
+        standby.registrationSent(at: 4010)
+        _ = state.receive(SrtlaWire.control(SrtlaWire.reg3), on: 2, at: 4020)
+        standby.received(at: 4020, registered: state.isRegistered(2))
+        XCTAssertTrue(state.isRegistered(2))
+        XCTAssertFalse(state.isRegistered(1))
+        XCTAssertFalse(standby.shouldReplace(at: 4020, registered: true, socketReady: true,
+                                            serverRetryAfter: state.retryDeadline(2)))
+        XCTAssertEqual(standby.fastReopens, 0)
+    }
+
     func testRejectWrongOwnerPrefixLengthAndPrematureConfirmation() throws {
         var state = try makeState()
         _ = state.poll(at: 0)
