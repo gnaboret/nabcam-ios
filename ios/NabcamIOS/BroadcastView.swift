@@ -278,6 +278,7 @@ struct BroadcastView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Section("First iOS build") {
+                        NavigationLink("Open-source acknowledgments") { AcknowledgmentsView() }
                         Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
                         Text("SRTLA is opt-in and experimental. Dual-SIM bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
                         Button("Restart camera preview") { Task { await model.restartPreview() } }

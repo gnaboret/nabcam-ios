@@ -106,6 +106,19 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(diagnostics.exists)
         XCTAssertTrue(fullyVisible(diagnostics, in: app, form: form))
         attach("settings-diagnostics", app: app)
+        let acknowledgments = app.buttons["Open-source acknowledgments"]
+        for _ in 0..<24 {
+            if fullyVisible(acknowledgments, in: app, form: form) { break }
+            scroll(form, toward: acknowledgments)
+        }
+        XCTAssertTrue(fullyVisible(acknowledgments, in: app, form: form))
+        acknowledgments.tap()
+        let notices = app.staticTexts["third-party-notices"]
+        XCTAssertTrue(notices.waitForExistence(timeout: 5))
+        XCTAssertTrue(notices.label.contains("HaishinKit 2.2.5"))
+        XCTAssertTrue(notices.label.contains("OpenSSL 3.3.2"))
+        attach("settings-acknowledgments", app: app)
+        app.navigationBars.buttons["Settings"].tap()
         app.buttons["Done"].tap()
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
         XCTAssertFalse(app.navigationBars["Settings"].exists)

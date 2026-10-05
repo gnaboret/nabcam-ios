@@ -71,6 +71,11 @@ jobs:
               assert info['CFBundleDisplayName'] == 'GNAB CAM IRL'
               assert info['CFBundleIcons']['CFBundlePrimaryIcon']['CFBundleIconName'] == 'AppIcon'
               assert (app / 'Assets.car').is_file()
+              notices = (app / 'ThirdPartyNotices.txt').read_text(encoding='utf-8')
+              for component in ['HaishinKit 2.2.5', 'Logboard 2.6.0', 'SRT 1.5.4', 'OpenSSL 3.3.2',
+                                'Mozilla Public License Version 2.0', 'University of Illinois', 'Aladdin Enterprises']:
+                  assert component in notices, f'Missing third-party notice: {component}'
+              assert len(notices) > 30000
               for permission in ['NSCameraUsageDescription', 'NSMicrophoneUsageDescription']:
                   assert info[permission].startswith('GNAB CAM IRL')
               with (app / 'PrivacyInfo.xcprivacy').open('rb') as f:

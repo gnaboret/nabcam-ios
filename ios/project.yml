@@ -12,6 +12,9 @@ packages:
   HaishinKit:
     url: https://github.com/HaishinKit/HaishinKit.swift.git
     exactVersion: 2.2.5
+  Logboard:
+    url: https://github.com/shogo4405/Logboard.git
+    exactVersion: 2.6.0
 targets:
   NabcamIOS:
     type: application
