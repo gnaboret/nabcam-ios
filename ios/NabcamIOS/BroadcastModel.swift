@@ -333,7 +333,7 @@ final class BroadcastModel: ObservableObject {
         let nextFront = !previousFront
         let preset = videoPreset
         let mirrored = mirrorFrontCamera
-        guard let previous = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: previousFront ? .front : .back),
+        guard AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: previousFront ? .front : .back) != nil,
               let next = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextFront ? .front : .back) else {
             errorMessage = "The other camera is unavailable. Your current camera was kept."
             return
@@ -354,10 +354,10 @@ final class BroadcastModel: ObservableObject {
         guard owner == generation, active, !audioInterrupted else { return }
         diagnostics.append(.cameraSwitchStarted(front: nextFront, live: isLive))
         let result = await cameraSwitch.run(apply: { [self] in
-            try await attachCamera(next, mirrored: nextFront && mirrored, fps: preset.fps)
+            try await attachCamera(front: nextFront, mirrored: nextFront && mirrored, fps: preset.fps)
             isFront = nextFront
         }, restore: { [self] in
-            try await attachCamera(previous, mirrored: previousFront && mirrored, fps: preset.fps)
+            try await attachCamera(front: previousFront, mirrored: previousFront && mirrored, fps: preset.fps)
             isFront = previousFront
         })
         guard owner == generation, active, !audioInterrupted else { return }
@@ -378,9 +378,12 @@ final class BroadcastModel: ObservableObject {
         await refreshCameraControls()
     }
 
-    private func attachCamera(_ device: AVCaptureDevice, mirrored: Bool, fps: Double) async throws {
+    private func attachCamera(front: Bool, mirrored: Bool, fps: Double) async throws {
         // Replace video only. Keep the audio input, mixer, stream, codec settings
         // and transport alive; never reset their clocks to hide a camera gap.
+        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: front ? .front : .back) else {
+            throw CaptureError.unavailable
+        }
         try await mixer.attachVideo(device)
         // The pinned dependency suppresses errors in attachVideo's configuration
         // callback, so apply throwing settings explicitly after attachment.
