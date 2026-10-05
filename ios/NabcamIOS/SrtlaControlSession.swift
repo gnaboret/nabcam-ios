@@ -73,6 +73,7 @@ final class SrtlaControlSession: @unchecked Sendable {
     private var localReplyDrops: UInt64 = 0
     private var nextPathID: UInt64 = 0
     private var socketReplacements: UInt64 = 0
+    private var uploadCounter = UploadByteCounter()
     private var started = false
     private var closed = false
 
@@ -132,6 +133,10 @@ final class SrtlaControlSession: @unchecked Sendable {
             }
         }
     }
+
+    /// Successful local UDP submissions across all path generations. Excludes
+    /// loopback writes and IP overhead; retained when paths disappear or close.
+    func transmittedBytes() -> UInt64 { queue.sync { uploadCounter.bytes } }
 
     /// Contains the original private SRT options. Use only to open the local SRT
     /// client; never place this URL in logs or diagnostic snapshots.
@@ -301,6 +306,7 @@ final class SrtlaControlSession: @unchecked Sendable {
                 guard let self else { return }
                 self.queue.async {
                     if !self.closed, success {
+                        self.uploadCounter.add(count)
                         self.paths[pathID]?.traffic.record(bytes: count, retransmission: false, at: Self.now())
                     }
                 }
@@ -407,6 +413,7 @@ final class SrtlaControlSession: @unchecked Sendable {
                 if let submission { self.pacer.finish(submission.id, successful: success, at: completed) }
                 else if success, !self.controls.isEmpty { self.controls.removeFirst() }
                 if success {
+                    self.uploadCounter.add(bytes.count)
                     let retransmission = sequence != nil && bytes[bytes.startIndex + 4] & 0x04 != 0
                     self.paths[id]?.traffic.record(bytes: bytes.count, retransmission: retransmission, at: completed)
                 }

@@ -36,6 +36,7 @@ struct BroadcastView: View {
     @AppStorage("hub.showLiveFPS") private var showLiveFPS = true
     @AppStorage("hub.leftHandedMode") private var leftHandedMode = false
     @AppStorage("hub.showResolution") private var showResolution = true
+    @AppStorage("hub.showUploadData") private var showUploadData = false
     @AppStorage("hub.showCompositionGrid") private var showCompositionGrid = false
 
     var body: some View {
@@ -109,6 +110,10 @@ struct BroadcastView: View {
                             .accessibilityIdentifier("hub-fps-toggle")
                         Toggle("Show resolution", isOn: $showResolution)
                             .accessibilityIdentifier("hub-resolution-toggle")
+                        Toggle("Upload data used", isOn: $showUploadData)
+                            .accessibilityIdentifier("hub-upload-toggle")
+                        Text("This broadcast’s local transport bytes—not carrier billing.")
+                            .font(.caption).foregroundStyle(nabPurple)
                         Toggle("Rule-of-thirds grid", isOn: $showCompositionGrid)
                             .accessibilityIdentifier("hub-grid-toggle")
                         Text("Preview guide only—not included in your broadcast.")
@@ -441,7 +446,15 @@ struct BroadcastView: View {
                     .accessibilityIdentifier("live-fps-readout")
             }
             if let paths = model.relayPathStatus {
+                // Relay details describe individual paths; upload usage is the
+                // whole broadcast, including paths that have since disappeared.
                 Text(paths).font(.caption2).foregroundStyle(.white)
+            }
+            if showUploadData, let bytes = model.uploadedBytes {
+                Text(UploadByteCounter.label(bytes: bytes))
+                    .font(.caption.monospacedDigit()).foregroundStyle(nabGreen)
+                    .accessibilityLabel("Local upload this broadcast: \(bytes) bytes")
+                    .accessibilityIdentifier("upload-data-readout")
             }
             if let traffic = model.relayTrafficStatus {
                 Text(traffic).font(.caption2.monospacedDigit()).foregroundStyle(.white)

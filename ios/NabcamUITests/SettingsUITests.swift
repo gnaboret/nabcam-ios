@@ -52,6 +52,13 @@ final class SettingsUITests: XCTestCase {
         let resolution = app.switches["hub-resolution-toggle"]
         XCTAssertEqual(resolution.value as? String, "1")
         setSwitch(resolution, to: "0", app: app, name: "resolution")
+        let upload = app.switches["hub-upload-toggle"]
+        for _ in 0..<8 {
+            if fullyVisible(upload, in: app, form: form) { break }
+            scroll(form, toward: upload)
+        }
+        XCTAssertEqual(upload.value as? String, "0")
+        setSwitch(upload, to: "1", app: app, name: "upload")
         let grid = app.switches["hub-grid-toggle"]
         for _ in 0..<8 {
             if fullyVisible(grid, in: app, form: form) { break }
@@ -78,6 +85,8 @@ final class SettingsUITests: XCTestCase {
         app.buttons["Done"].tap()
         let hud = app.descendants(matching: .any).matching(identifier: "status-hud").firstMatch
         XCTAssertTrue(hud.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["upload-data-readout"].exists,
+                       "Preview must not invent broadcast upload measurements")
         XCTAssertLessThan(settings.frame.maxX, hud.frame.minX)
         XCTAssertEqual(app.buttons["MIC ON"].frame, microphoneFrame)
         XCTAssertEqual(app.buttons["SELFIE"].frame, cameraFrame)
@@ -102,6 +111,12 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertEqual(resolution.value as? String, "0")
         setSwitch(resolution, to: "1", app: app, name: "resolution")
+        for _ in 0..<8 {
+            if fullyVisible(upload, in: app, form: form) { break }
+            scroll(form, toward: upload)
+        }
+        XCTAssertEqual(upload.value as? String, "1")
+        setSwitch(upload, to: "0", app: app, name: "upload")
         for _ in 0..<8 {
             if fullyVisible(grid, in: app, form: form) { break }
             scroll(form, toward: grid)

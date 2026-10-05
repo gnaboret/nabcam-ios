@@ -40,6 +40,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var experimentalSrtlaEnabled = false
     @Published private(set) var relayPathStatus: String?
     @Published private(set) var relayTrafficStatus: String?
+    @Published private(set) var uploadedBytes: UInt64?
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
@@ -52,6 +53,7 @@ final class BroadcastModel: ObservableObject {
     private lazy var srtPublishingSession = SrtPublishSession()
     private var srtlaRelay: SrtlaControlSession?
     private var relayStatusTask: Task<Void, Never>?
+    private var uploadStatusTask: Task<Void, Never>?
     private var connectionTask: Task<Void, Never>?
     private var lifecycleTask: Task<Void, Never>?
     private var generation = 0
@@ -158,6 +160,7 @@ final class BroadcastModel: ObservableObject {
         }
         generation += 1
         let owner = generation
+        uploadedBytes = nil
         isBusy = true
         isConnecting = true
         status = "Connecting · \(validated.protocolName)"
@@ -197,6 +200,10 @@ final class BroadcastModel: ObservableObject {
                 session = next
                 await next.setMaxRetryCount(0)
                 let stream = await next.stream
+                let uploadObserver = UploadTransportObserver()
+                if validated.protocolName != "SRT", !validated.requiresSrtlaRelay {
+                    await stream.setBitRateStrategy(uploadObserver)
+                }
                 try await stream.setVideoSettings(VideoEncoderConfiguration.settings(codec: codec, preset: videoPreset, bitrateKbps: bitrateKbps))
                 try await stream.setAudioSettings(AudioCodecSettings(bitRate: audioBitrate.bitsPerSecond, sampleRate: 48_000))
                 await mixer.addOutput(stream)
@@ -218,6 +225,8 @@ final class BroadcastModel: ObservableObject {
                 isBusy = false
                 isConnecting = false
                 isLive = true
+                startUploadStatus(observer: uploadObserver, relay: candidateRelay,
+                                  isSRT: validated.protocolName == "SRT", owner: owner)
                 diagnostics.append(.connected)
                 status = "LIVE · \(validated.protocolName) · target \(bitrateKbps) kbps"
                 UIApplication.shared.isIdleTimerDisabled = true
@@ -233,6 +242,8 @@ final class BroadcastModel: ObservableObject {
                 relayPathStatus = nil
                 relayTrafficStatus = nil
                 session = nil
+                uploadStatusTask?.cancel(); uploadStatusTask = nil
+                uploadedBytes = nil
                 isBusy = false
                 isConnecting = false
                 isLive = false
@@ -260,6 +271,8 @@ final class BroadcastModel: ObservableObject {
         isLive = false
         let previous = session
         session = nil
+        uploadStatusTask?.cancel(); uploadStatusTask = nil
+        uploadedBytes = nil
         relayStatusTask?.cancel(); relayStatusTask = nil
         srtlaRelay?.close(); srtlaRelay = nil
         relayPathStatus = nil
@@ -280,6 +293,32 @@ final class BroadcastModel: ObservableObject {
     func setExperimentalSrtla(_ enabled: Bool) {
         guard !isLive, !isBusy else { return }
         experimentalSrtlaEnabled = enabled
+    }
+
+    private func startUploadStatus(observer: UploadTransportObserver, relay: SrtlaControlSession?,
+                                   isSRT: Bool, owner: Int) {
+        uploadStatusTask?.cancel()
+        uploadStatusTask = Task { [weak self] in
+            var counter = UploadByteCounter()
+            while !Task.isCancelled {
+                guard let self, self.generation == owner else { return }
+                let measured: UInt64?
+                if let relay {
+                    // Never add the loopback SRT counter to the external relay total.
+                    measured = relay.transmittedBytes()
+                } else if isSRT {
+                    measured = await self.srtPublishingSession.connection.performanceData?.byteSentTotal
+                } else {
+                    measured = await observer.bytes
+                }
+                guard !Task.isCancelled, self.generation == owner else { return }
+                if let measured {
+                    counter.observe(total: measured)
+                    self.uploadedBytes = counter.bytes
+                }
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
+        }
     }
 
     private func startRelayStatus(_ relay: SrtlaControlSession, owner: Int) {

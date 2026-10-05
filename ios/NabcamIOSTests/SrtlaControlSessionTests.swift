@@ -90,6 +90,14 @@ final class SrtlaControlSessionTests: XCTestCase {
         XCTAssertEqual(session.relaySnapshot().socketReplacements, 1)
         XCTAssertEqual(receiver.stats.connections, 2)
         XCTAssertEqual(session.snapshot().first?.id, 2, "Old socket IDs must not be reused")
+        let currentPathBytes = session.snapshot().reduce(UInt64(0)) { $0 + $1.transmittedBytes }
+        XCTAssertGreaterThan(session.transmittedBytes(), currentPathBytes,
+                             "Replacement must retain registration bytes from the old socket")
+        session.close()
+        let closedBytes = session.transmittedBytes()
+        XCTAssertGreaterThan(closedBytes, 0)
+        session.close(); session.start()
+        XCTAssertEqual(session.transmittedBytes(), closedBytes)
     }
 
     func testPublishingWaitCanTimeoutAndCancelWithoutReportingAConnection() async throws {
@@ -195,6 +203,7 @@ final class SrtlaControlSessionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(traffic.reduce(UInt64(0)) { $0 + $1.totalBytes }, UInt64(packets.reduce(0) { $0 + $1.count }))
         XCTAssertEqual(traffic.reduce(UInt64(0)) { $0 + $1.totalRetransmittedBytes }, 1332)
         XCTAssertEqual(traffic.reduce(UInt64(0)) { $0 + $1.totalRetransmittedPackets }, 1)
+        XCTAssertGreaterThanOrEqual(session.transmittedBytes(), traffic.reduce(UInt64(0)) { $0 + $1.totalBytes })
         XCTAssertEqual(session.relaySnapshot().queuedPackets, 0)
         XCTAssertEqual(session.relaySnapshot().overflowPackets, 0)
         XCTAssertEqual(session.relaySnapshot().localReplyDrops, 0)

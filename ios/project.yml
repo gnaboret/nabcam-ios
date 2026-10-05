@@ -76,6 +76,7 @@ targets:
       - path: NabcamIOS/OverlayPreferencesStore.swift
       - path: NabcamIOS/MixerAudioMonitor.swift
       - path: NabcamIOS/MixerFrameMonitor.swift
+      - path: NabcamIOS/UploadTransportObserver.swift
       - path: NabcamIOS/PreviewCompositionGrid.swift
       - path: NabcamIOS/SrtlaDatagramPath.swift
       - path: NabcamIOS/SrtlaControlSession.swift
