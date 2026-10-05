@@ -77,7 +77,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         let stream = await session.mediaStream
         let streamID = encrypted ? (escapedCredentials ? "#!::r=nabcam/interop,token=a+b&c?%" : "nabcam-interop") : ""
         let passphrase: String? = encrypted ? (escapedCredentials ? "nabcam+local&test#?%" : "nabcam-local-test") : nil
-        let server = try NativeSRTReceiver(passphrase: passphrase)
+        let server = try NativeSRTReceiver(passphrase: passphrase, recordFixture: videoFormatChange)
         defer { server.close() }
         server.start()
         let proxyReady = expectation(description: "Local SRTLA-to-SRT proxy ready")
@@ -169,6 +169,15 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             XCTAssertEqual(proxy.failureCount, 0)
             XCTAssertEqual(proxy.mediaPathCount, 2)
             XCTAssertEqual(relay.relaySnapshot().overflowPackets, 0)
+            if videoFormatChange {
+                // Synthetic gray video and sine-wave audio only, never capture
+                // from the phone. CI decodes the receiver's actual TS bytes.
+                let recording = try XCTUnwrap(server.fixtureRecording())
+                XCTAssertFalse(received.recordingOverflow)
+                let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try recording.write(to: directory.appendingPathComponent("srtla-av-format-change.ts"), options: .atomic)
+            }
             await session.close()
         } catch {
             await session.close()
@@ -206,6 +215,7 @@ private final class NativeSRTReceiver: @unchecked Sendable {
     struct Snapshot {
         var accepted = false; var streamID = ""; var transportPackets = 0; var invalidMessages = 0
         var audioPES = 0; var videoPES = 0
+        var recordingOverflow = false
     }
     enum Failure: Error { case setup }
     let port: UInt16
@@ -216,8 +226,10 @@ private final class NativeSRTReceiver: @unchecked Sendable {
     private var stats = Snapshot()
     private var timer: DispatchSourceTimer?
     private var stopped = false
+    private var recording: Data?
 
-    init(passphrase: String?) throws {
+    init(passphrase: String?, recordFixture: Bool = false) throws {
+        recording = recordFixture ? Data() : nil
         let socket = srt_create_socket()
         var complete = false
         defer { if !complete, socket != SRT_INVALID_SOCK { srt_close(socket) } }
@@ -260,6 +272,7 @@ private final class NativeSRTReceiver: @unchecked Sendable {
         self.timer = timer; timer.resume()
     }
     func snapshot() -> Snapshot { lock.lock(); defer { lock.unlock() }; return stats }
+    func fixtureRecording() -> Data? { lock.lock(); defer { lock.unlock() }; return recording }
     func close() {
         lock.lock()
         guard !stopped else { lock.unlock(); return }
@@ -297,6 +310,11 @@ private final class NativeSRTReceiver: @unchecked Sendable {
             guard count > 0 else { break }
             let size = Int(count)
             if size % 188 == 0 && stride(from: 0, to: size, by: 188).allSatisfy({ UInt8(bitPattern: buffer[$0]) == 0x47 }) {
+                if let bytes = recording?.count {
+                    if bytes + size <= 2 * 1024 * 1024 {
+                        recording?.append(contentsOf: buffer.prefix(size).map { UInt8(bitPattern: $0) })
+                    } else { stats.recordingOverflow = true }
+                }
                 stats.transportPackets += size / 188
                 // Pinned HaishinKit muxer uses video PID 256 and audio PID 257.
                 // Count PES starts, not padding/continuations. This proves
