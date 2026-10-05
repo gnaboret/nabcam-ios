@@ -16,6 +16,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var isMuted = false
     @Published private(set) var isFront = false
+    @Published private(set) var mirrorFrontCamera = false
     @Published private(set) var isConnecting = false
     @Published private(set) var zoom = 1.0
     @Published private(set) var maximumZoom = 1.0
@@ -56,6 +57,7 @@ final class BroadcastModel: ObservableObject {
             guard let video = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: isFront ? .front : .back),
                   let microphone = AVCaptureDevice.default(for: .audio) else { throw CaptureError.unavailable }
             try await mixer.attachVideo(video)
+            try await applyCameraMirroring()
             try await mixer.attachAudio(microphone)
             // Offscreen mode controls output cadence separately from camera capture.
             try await mixer.configuration(video: 0) { try $0.setFrameRate(30) }
@@ -180,12 +182,39 @@ final class BroadcastModel: ObservableObject {
         do {
             try await mixer.attachVideo(device)
             isFront.toggle()
+            try await applyCameraMirroring()
             try await mixer.configuration(video: 0) { try $0.setFrameRate(30) }
             try await mixer.setFrameRate(30)
             await refreshCameraControls()
         } catch {
             await refreshCameraControls()
             errorMessage = "Unable to switch cameras. Stop and restart the preview to retry."
+        }
+    }
+
+    func setFrontCameraMirrored(_ enabled: Bool) async {
+        guard active, isReady, !isBusy, !isLive else { return }
+        isBusy = true
+        defer { isBusy = false }
+        let previous = mirrorFrontCamera
+        mirrorFrontCamera = enabled
+        do { try await applyCameraMirroring() }
+        catch {
+            mirrorFrontCamera = previous
+            errorMessage = "Mirroring is unavailable on this camera. Your previous setting was kept."
+        }
+    }
+
+    private func applyCameraMirroring() async throws {
+        let mirrored = isFront && mirrorFrontCamera
+        try await mixer.configuration(video: 0) { unit in
+            guard let connection = unit.connection else { throw CaptureError.unavailable }
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                unit.isVideoMirrored = mirrored
+            } else if mirrored {
+                throw CaptureError.unavailable
+            }
         }
     }
 

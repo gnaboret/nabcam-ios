@@ -77,6 +77,11 @@ struct BroadcastView: View {
             NavigationStack {
                 Form {
                     Section("Camera") {
+                        Toggle("Mirror front camera", isOn: Binding(get: { model.mirrorFrontCamera }, set: { value in
+                            Task { await model.setFrontCameraMirrored(value) }
+                        })).disabled(!model.isReady || model.isBusy || model.isLive)
+                        Text("Matches the selfie preview and outgoing video. Rear camera stays unmirrored. Change before going live.")
+                            .font(.caption).foregroundStyle(.secondary)
                         if model.maximumZoom > model.minimumZoom {
                             LabeledContent("Zoom", value: String(format: "%.1f×", model.zoom))
                             Slider(value: Binding(get: { model.zoom }, set: { value in Task { await model.setZoom(value) } }),
