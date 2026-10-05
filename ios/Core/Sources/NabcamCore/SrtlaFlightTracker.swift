@@ -22,7 +22,9 @@ public struct SrtlaFlightTracker: Sendable {
 
     public init() {}
 
-    /// Call after successful socket submission, not merely relay-queue admission.
+    /// Call when beginning a socket attempt, not merely relay-queue admission.
+    /// Remove a failed attempt without treating it as receiver confirmation. RTT
+    /// samples measure dispatch-to-ACK and can include OS submission delay.
     @discardableResult
     public mutating func record(sequence: UInt32, bytes: Int, at time: Int64) -> Bool {
         guard sequence <= 0x7fffffff, (1...1500).contains(bytes), accept(time) else { return false }
