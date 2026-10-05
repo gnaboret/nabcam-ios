@@ -17,6 +17,11 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var isMuted = false
     @Published private(set) var isFront = false
     @Published private(set) var isConnecting = false
+    @Published private(set) var zoom = 1.0
+    @Published private(set) var maximumZoom = 1.0
+    @Published private(set) var minimumZoom = 1.0
+    @Published private(set) var hasTorch = false
+    @Published private(set) var isTorchOn = false
     @Published var errorMessage: String?
     let mixer = MediaMixer()
     private var session: (any Session)?
@@ -24,6 +29,7 @@ final class BroadcastModel: ObservableObject {
     private var lifecycleTask: Task<Void, Never>?
     private var generation = 0
     private var active = true
+    private var cameraDevice: AVCaptureDevice?
 
     private func prepare() async {
         guard active, !isReady, !isBusy else { return }
@@ -34,7 +40,7 @@ final class BroadcastModel: ObservableObject {
         guard active else { return }
         guard camera && microphone else {
             status = "Permissions needed"
-            errorMessage = "Allow Camera and Microphone in iOS Settings, then return to NABCAM IRL."
+            errorMessage = "Allow Camera and Microphone in iOS Settings, then return to GNAB CAM IRL."
             return
         }
         do {
@@ -47,11 +53,13 @@ final class BroadcastModel: ObservableObject {
             guard let video = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: isFront ? .front : .back),
                   let microphone = AVCaptureDevice.default(for: .audio) else { throw CaptureError.unavailable }
             try await mixer.attachVideo(video)
+            cameraDevice = video
             try await mixer.attachAudio(microphone)
             try await mixer.setFrameRate(30)
             guard active else { await releaseCapture(); return }
             await mixer.startRunning()
             isReady = true
+            refreshCameraControls()
             status = "Preview · 720p · requested 30 FPS"
         } catch {
             await releaseCapture()
@@ -155,11 +163,70 @@ final class BroadcastModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: isFront ? .back : .front) else { return }
+        turnOffTorch()
         do {
             try await mixer.attachVideo(device)
+            cameraDevice = device
+            isFront = device.position == .front
             try await mixer.setFrameRate(30)
-            isFront.toggle()
-        } catch { errorMessage = "Unable to switch cameras. Stop and restart the preview to retry." }
+            refreshCameraControls()
+        } catch {
+            refreshCameraControls()
+            errorMessage = "Unable to switch cameras. Stop and restart the preview to retry."
+        }
+    }
+
+    func setZoom(_ value: Double) {
+        guard active, isReady, !isBusy, value.isFinite, let device = cameraDevice else { return }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            let lower = max(1, device.minAvailableVideoZoomFactor)
+            let upper = max(lower, min(device.maxAvailableVideoZoomFactor, device.activeFormat.videoMaxZoomFactor))
+            device.videoZoomFactor = min(upper, max(lower, CGFloat(value)))
+            zoom = Double(device.videoZoomFactor)
+        } catch { errorMessage = "Camera zoom is temporarily unavailable." }
+    }
+
+    func toggleTorch() {
+        guard active, isReady, !isBusy, let device = cameraDevice,
+              device.hasTorch else { return }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            if device.torchMode == .on, device.isTorchModeSupported(.off) {
+                device.torchMode = .off
+            } else {
+                guard device.isTorchAvailable, device.isTorchModeSupported(.on) else {
+                    errorMessage = "Flashlight is unavailable. The camera may be busy or the phone too warm."
+                    return
+                }
+                try device.setTorchModeOn(level: AVCaptureDevice.maxAvailableTorchLevel)
+            }
+            isTorchOn = device.torchMode == .on
+        } catch { errorMessage = "Could not change the flashlight. Try again when the camera is available." }
+    }
+
+    private func refreshCameraControls() {
+        guard let device = cameraDevice else {
+            hasTorch = false; isTorchOn = false; zoom = 1; minimumZoom = 1; maximumZoom = 1
+            return
+        }
+        hasTorch = device.hasTorch && device.isTorchModeSupported(.on)
+        isTorchOn = device.torchMode == .on
+        minimumZoom = Double(max(1, device.minAvailableVideoZoomFactor))
+        maximumZoom = max(minimumZoom, Double(min(device.maxAvailableVideoZoomFactor, device.activeFormat.videoMaxZoomFactor)))
+        zoom = Double(device.videoZoomFactor)
+    }
+
+    private func turnOffTorch() {
+        guard let device = cameraDevice, device.hasTorch, device.isTorchModeSupported(.off) else { return }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.torchMode = .off
+            isTorchOn = false
+        } catch { /* Capture shutdown still proceeds if the device is unavailable. */ }
     }
 
     func toggleMute() async {
@@ -191,11 +258,14 @@ final class BroadcastModel: ObservableObject {
     }
 
     private func releaseCapture() async {
+        turnOffTorch()
         await mixer.stopRunning()
         try? await mixer.attachVideo(nil)
         try? await mixer.attachAudio(nil)
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         isReady = false
+        cameraDevice = nil
+        refreshCameraControls()
     }
 
     private enum CaptureError: Error { case unavailable }
