@@ -44,7 +44,8 @@ public struct SrtlaRegistration: Sendable {
     public mutating func poll(at time: Int64) -> [Transmission] {
         guard acceptTime(time), !needsNewGroup else { return [] }
         if let owner, time >= ownerDeadline {
-            paths[owner]?.retryAfter = max(paths[owner]?.retryAfter ?? 0, time + 2000)
+            let retry = max(paths[owner]?.retryAfter ?? 0, time + 2000)
+            paths[owner]?.retryAfter = retry
             self.owner = nil
         }
         var outgoing: [Transmission] = []
@@ -99,7 +100,8 @@ public struct SrtlaRegistration: Sendable {
                 needsNewGroup = true; hasGroup = false; owner = nil
                 for pathID in paths.keys {
                     paths[pathID]?.joinSent = false
-                    paths[pathID]?.retryAfter = max(paths[pathID]?.retryAfter ?? 0, time + 2000)
+                    let retry = max(paths[pathID]?.retryAfter ?? 0, time + 2000)
+                    paths[pathID]?.retryAfter = retry
                 }
             }
         case SrtlaWire.error, SrtlaWire.rejected:

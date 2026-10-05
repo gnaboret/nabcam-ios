@@ -45,18 +45,18 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(form.waitForExistence(timeout: 10))
         attach("settings-camera", app: app)
         let addWatermark = app.buttons["Add image watermark"]
-        for _ in 0..<12 {
+        for _ in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }
-            scroll(form)
+            scroll(form, toward: addWatermark)
         }
         attach("settings-overlays", app: app)
         XCTAssertTrue(addWatermark.exists)
         XCTAssertTrue(addWatermark.isHittable)
         XCTAssertTrue(fullyVisible(addWatermark, in: app, form: form))
         let diagnostics = app.buttons["Share diagnostic timeline"]
-        for _ in 0..<8 {
+        for _ in 0..<24 {
             if fullyVisible(diagnostics, in: app, form: form) { break }
-            scroll(form)
+            scroll(form, toward: diagnostics)
         }
         XCTAssertTrue(diagnostics.exists)
         XCTAssertTrue(fullyVisible(diagnostics, in: app, form: form))
@@ -85,9 +85,12 @@ final class SettingsUITests: XCTestCase {
             && frame.maxY <= form.frame.maxY - 24
     }
 
-    private func scroll(_ form: XCUIElement) {
-        let lower = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.8))
-        let upper = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2))
-        lower.press(forDuration: 0.05, thenDragTo: upper)
+    private func scroll(_ form: XCUIElement, toward element: XCUIElement) {
+        // Short drags avoid jumping over an entire button between observations.
+        // If it has moved behind the navigation bar, correct upward instead.
+        let reverse = element.exists && element.frame.midY < form.frame.midY
+        let start = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        let end = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: reverse ? 0.73 : 0.37))
+        start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
     }
 }
