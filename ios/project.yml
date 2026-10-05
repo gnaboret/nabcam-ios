@@ -79,6 +79,8 @@ targets:
       - package: NabcamCore
       - package: HaishinKit
         product: HaishinKit
+      - package: HaishinKit
+        product: SRTHaishinKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-host
@@ -95,6 +97,8 @@ targets:
       - target: NabcamStorageHost
       - package: HaishinKit
         product: HaishinKit
+      - package: HaishinKit
+        product: SRTHaishinKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-tests
