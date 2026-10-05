@@ -69,7 +69,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
         let session = Self.session
-        let stream = session.mediaStream
+        let stream = await session.mediaStream
         let streamID = encrypted ? (escapedCredentials ? "#!::r=nabcam/interop,token=a+b&c?%" : "nabcam-interop") : ""
         let passphrase: String? = encrypted ? (escapedCredentials ? "nabcam+local&test#?%" : "nabcam-local-test") : nil
         let server = try NativeSRTReceiver(passphrase: passphrase)

@@ -37,6 +37,9 @@ final class BroadcastModel: ObservableObject {
     func clearDiagnostics() { diagnostics.clear() }
     let mixer = MediaMixer()
     private var session: (any Session)?
+    // Keep the SRT runtime/stream alive across Start and Stop. The session resets
+    // its socket and credentials between attempts, without global runtime churn.
+    private lazy var srtPublishingSession = SrtPublishSession()
     private var connectionTask: Task<Void, Never>?
     private var lifecycleTask: Task<Void, Never>?
     private var generation = 0
@@ -141,10 +144,16 @@ final class BroadcastModel: ObservableObject {
         connectionTask = Task {
             var candidate: (any Session)?
             do {
-                await SessionBuilderFactory.shared.register(RTMPSessionFactory())
-                await SessionBuilderFactory.shared.register(SRTSessionFactory())
-                guard let next = try await SessionBuilderFactory.shared.make(validated.url).setMode(.publish).build() else {
-                    throw DestinationError.unsupported
+                let next: any Session
+                if validated.protocolName == "SRT" {
+                    try await srtPublishingSession.configure(validated.url)
+                    next = srtPublishingSession
+                } else {
+                    await SessionBuilderFactory.shared.register(RTMPSessionFactory())
+                    guard let standard = try await SessionBuilderFactory.shared.make(validated.url).setMode(.publish).build() else {
+                        throw DestinationError.unsupported
+                    }
+                    next = standard
                 }
                 candidate = next
                 try Task.checkCancellation()
@@ -192,7 +201,11 @@ final class BroadcastModel: ObservableObject {
                 status = "Connection failed"
                 diagnostics.append(.connectionFailed)
                 // Never expose a stream URL/key through a transport error description.
-                errorMessage = "Could not publish. Check the destination, stream key, receiver availability and protocol. SRTLA is not supported in this first iOS build."
+                if let optionError = error as? SrtConnectionOptions.ValidationError {
+                    errorMessage = optionError.localizedDescription
+                } else {
+                    errorMessage = "Could not publish. Check the destination, stream key, receiver availability and protocol. SRTLA is not supported in this first iOS build."
+                }
             }
         }
     }
