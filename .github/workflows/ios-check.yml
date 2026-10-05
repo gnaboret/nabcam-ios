@@ -9,7 +9,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
-      - name: Test destination handling
+      - name: Test destinations, chat and connection profiles
         working-directory: ios/Core
         run: swift test
       - name: Install project generator
@@ -31,6 +31,24 @@ jobs:
           -sdk iphoneos -destination 'generic/platform=iOS'
           -derivedDataPath build/device -configuration Release
           ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+      - name: Verify packaged identity and permissions
+        working-directory: ios
+        run: |
+          python3 - <<'PY'
+          import pathlib, plistlib
+          for target, config in [('simulator', 'Debug-iphonesimulator'), ('device', 'Release-iphoneos')]:
+              app = pathlib.Path('build') / target / 'Build/Products' / config / 'NabcamIOS.app'
+              with (app / 'Info.plist').open('rb') as f:
+                  info = plistlib.load(f)
+              assert info['CFBundleIdentifier'] == 'com.gnabcamirl.app'
+              assert info['CFBundleDisplayName'] == 'GNAB CAM IRL'
+              for permission in ['NSCameraUsageDescription', 'NSMicrophoneUsageDescription']:
+                  assert info[permission].startswith('GNAB CAM IRL')
+              with (app / 'PrivacyInfo.xcprivacy').open('rb') as f:
+                  privacy = plistlib.load(f)
+              assert privacy['NSPrivacyTracking'] is False
+              print(target, 'identity, capture permission text and app privacy manifest verified')
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: nabcam-ios-simulator-not-for-iphone-install
