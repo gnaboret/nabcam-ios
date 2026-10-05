@@ -46,18 +46,20 @@ final class SettingsUITests: XCTestCase {
         attach("settings-camera", app: app)
         let addWatermark = app.buttons["Add image watermark"]
         for _ in 0..<12 {
-            if addWatermark.exists && addWatermark.isHittable { break }
+            if fullyVisible(addWatermark, in: app, form: form) { break }
             scroll(form)
         }
         attach("settings-overlays", app: app)
         XCTAssertTrue(addWatermark.exists)
         XCTAssertTrue(addWatermark.isHittable)
+        XCTAssertTrue(fullyVisible(addWatermark, in: app, form: form))
         let diagnostics = app.buttons["Share diagnostic timeline"]
         for _ in 0..<8 {
-            if diagnostics.exists && diagnostics.isHittable { break }
+            if fullyVisible(diagnostics, in: app, form: form) { break }
             scroll(form)
         }
         XCTAssertTrue(diagnostics.exists)
+        XCTAssertTrue(fullyVisible(diagnostics, in: app, form: form))
         attach("settings-diagnostics", app: app)
         app.buttons["Done"].tap()
         XCTAssertTrue(settings.waitForExistence(timeout: 10))
@@ -74,6 +76,13 @@ final class SettingsUITests: XCTestCase {
         hierarchy.name = name + "-accessibility"
         hierarchy.lifetime = .keepAlways
         add(hierarchy)
+    }
+
+    private func fullyVisible(_ element: XCUIElement, in app: XCUIApplication, form: XCUIElement) -> Bool {
+        guard element.exists, element.isHittable else { return false }
+        let frame = element.frame
+        return frame.minY >= app.navigationBars["Settings"].frame.maxY + 8
+            && frame.maxY <= form.frame.maxY - 24
     }
 
     private func scroll(_ form: XCUIElement) {

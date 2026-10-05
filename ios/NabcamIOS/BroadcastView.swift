@@ -41,7 +41,7 @@ struct BroadcastView: View {
                     .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
                     Spacer()
                     Button { showSettings = true } label: { Image(systemName: "gearshape.fill").frame(width: 48, height: 48) }
-                        .background(nabPurple, in: Circle()).accessibilityLabel("Settings")
+                        .foregroundStyle(.black).background(nabPurple, in: Circle()).accessibilityLabel("Settings")
                 }
                 Spacer()
                 if chat.isEnabled {
