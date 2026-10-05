@@ -17,6 +17,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var isMuted = false
     @Published private(set) var isFront = false
     @Published private(set) var mirrorFrontCamera = false
+    @Published private(set) var videoPreset: VideoPreset = .hd30
     @Published private(set) var isConnecting = false
     @Published private(set) var zoom = 1.0
     @Published private(set) var maximumZoom = 1.0
@@ -52,7 +53,7 @@ final class BroadcastModel: ObservableObject {
             try audio.setCategory(.playAndRecord, mode: .videoRecording, options: [.defaultToSpeaker, .allowBluetooth])
             try audio.setActive(true)
             await mixer.setMonitoringEnabled(false)
-            await mixer.setSessionPreset(.hd1280x720)
+            await mixer.setSessionPreset(videoPreset.height == 720 ? .hd1280x720 : .hd1920x1080)
             await mixer.setVideoOrientation(.landscapeRight)
             guard let video = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: isFront ? .front : .back),
                   let microphone = AVCaptureDevice.default(for: .audio) else { throw CaptureError.unavailable }
@@ -60,26 +61,28 @@ final class BroadcastModel: ObservableObject {
             try await applyCameraMirroring()
             try await mixer.attachAudio(microphone)
             // Offscreen mode controls output cadence separately from camera capture.
-            try await mixer.configuration(video: 0) { try $0.setFrameRate(30) }
+            let captureFPS = videoPreset.fps
+            try await mixer.configuration(video: 0) { try $0.setFrameRate(captureFPS) }
             var mixing = await mixer.videoMixerSettings
             mixing.mode = clockEnabled ? .offscreen : .passthrough
             await mixer.setVideoMixerSettings(mixing)
             if clockEnabled {
                 let clock = await StreamClock()
-                try await clock.install(on: mixer.screen, corner: clockCorner)
+                try await clock.install(on: mixer.screen, corner: clockCorner,
+                                        width: videoPreset.width, height: videoPreset.height)
                 streamClock = clock
             }
-            try await mixer.setFrameRate(30)
+            try await mixer.setFrameRate(videoPreset.fps)
             guard active else { await releaseCapture(); return }
             await mixer.startRunning()
             isReady = true
             startClockUpdates()
             await refreshCameraControls()
-            status = "Preview · 720p · requested 30 FPS"
+            status = "Preview · requested \(videoPreset.label)"
         } catch {
             await releaseCapture()
             status = "Camera unavailable"
-            errorMessage = "Could not start camera/audio capture. Check permissions and close other camera apps."
+            errorMessage = "Could not start \(videoPreset.label). This camera may not support that mode. Try 720p / 30 FPS, check permissions and close other camera apps."
         }
     }
 
@@ -112,10 +115,10 @@ final class BroadcastModel: ObservableObject {
                 await next.setMaxRetryCount(0)
                 let stream = await next.stream
                 try await stream.setVideoSettings(VideoCodecSettings(
-                    videoSize: .init(width: 1280, height: 720), bitRate: bitrateKbps * 1000,
+                    videoSize: .init(width: videoPreset.width, height: videoPreset.height), bitRate: bitrateKbps * 1000,
                     profileLevel: kVTProfileLevel_H264_Main_AutoLevel as String,
                     bitRateMode: .average, maxKeyFrameIntervalDuration: 2,
-                    allowFrameReordering: false, expectedFrameRate: 30))
+                    allowFrameReordering: false, expectedFrameRate: videoPreset.fps))
                 try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000, sampleRate: 48_000))
                 await mixer.addOutput(stream)
                 try Task.checkCancellation()
@@ -183,12 +186,14 @@ final class BroadcastModel: ObservableObject {
             try await mixer.attachVideo(device)
             isFront.toggle()
             try await applyCameraMirroring()
-            try await mixer.configuration(video: 0) { try $0.setFrameRate(30) }
-            try await mixer.setFrameRate(30)
+            let captureFPS = videoPreset.fps
+            try await mixer.configuration(video: 0) { try $0.setFrameRate(captureFPS) }
+            try await mixer.setFrameRate(videoPreset.fps)
             await refreshCameraControls()
         } catch {
-            await refreshCameraControls()
-            errorMessage = "Unable to switch cameras. Stop and restart the preview to retry."
+            await releaseCapture()
+            status = "Camera mode unavailable"
+            errorMessage = "This camera could not use \(videoPreset.label). Choose a lower mode or restart the preview."
         }
     }
 
@@ -335,6 +340,15 @@ final class BroadcastModel: ObservableObject {
         clockCorner = corner
         await setActive(false)
         // Do not restart capture if iOS sent the app to the background during teardown.
+        guard UIApplication.shared.applicationState != .background else { return }
+        await setActive(true)
+    }
+
+    func configureVideo(_ preset: VideoPreset) async {
+        guard active, !isLive, !isBusy else { return }
+        guard preset != videoPreset || !isReady else { return }
+        videoPreset = preset
+        await setActive(false)
         guard UIApplication.shared.applicationState != .background else { return }
         await setActive(true)
     }

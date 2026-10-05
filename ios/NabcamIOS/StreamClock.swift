@@ -27,9 +27,9 @@ final class StreamClock {
         text.layoutMargin = .init(top: 24, left: 24, bottom: 24, right: 24)
     }
 
-    func install(on screen: Screen, corner: ClockCorner) throws {
+    func install(on screen: Screen, corner: ClockCorner, width: Int, height: Int) throws {
         self.screen?.removeChild(text)
-        screen.size = .init(width: 1280, height: 720)
+        screen.size = .init(width: width, height: height)
         text.horizontalAlignment = (corner == .topLeft || corner == .bottomLeft) ? .left : .right
         text.verticalAlignment = (corner == .topLeft || corner == .topRight) ? .top : .bottom
         text.invalidateLayout()

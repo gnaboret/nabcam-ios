@@ -107,6 +107,7 @@ struct BroadcastView: View {
                                     profileID = profile.id; profileName = profile.name
                                     destination = profile.destination; bitrate = profile.bitrateKbps
                                     chatChannel = profile.chatChannel; profileNotice = nil
+                                    Task { await model.configureVideo(profile.videoPreset ?? .hd30) }
                                 }
                             }
                         }.disabled(model.isLive || model.isBusy)
@@ -115,7 +116,7 @@ struct BroadcastView: View {
                         SecureField("Full RTMP / RTMPS / SRT URL", text: $destination)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .disabled(model.isLive || model.isBusy)
-                        Text("Include your stream key in the URL. Save stores this connection, bitrate and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
+                        Text("Include your stream key in the URL. Save stores this connection, video mode, bitrate and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
                         Button(profileID == nil ? "Save connection" : "Save changes") { saveConnection() }
                             .disabled(model.isLive || model.isBusy || !connections.canWrite)
                         if profileID != nil {
@@ -130,10 +131,15 @@ struct BroadcastView: View {
                         if let profileNotice { Text(profileNotice).font(.caption).foregroundStyle(nabPurple) }
                     }
                     Section("Video") {
+                        Picker("Resolution / FPS", selection: Binding(get: { model.videoPreset }, set: { preset in
+                            Task { await model.configureVideo(preset) }
+                        })) {
+                            ForEach(VideoPreset.allCases) { Text($0.label).tag($0) }
+                        }.disabled(model.isLive || model.isBusy)
                         Picker("Target bitrate", selection: $bitrate) {
                             ForEach([444, 800, 1200, 1600, 2500, 4000, 6000], id: \.self) { Text("\($0) kbps").tag($0) }
                         }.disabled(model.isLive || model.isBusy)
-                        Text("720p · requested 30 FPS · H.264 + AAC. Fixed bitrate target; no adaptive controller yet.").font(.caption)
+                        Text("Requested camera rate, not measured delivery. Unsupported camera modes show an error. H.264 + AAC; fixed bitrate target, no adaptive controller yet.").font(.caption)
                     }
                     Section("Chat") {
                         TextField("Kick channel name", text: $chatChannel)
@@ -188,7 +194,7 @@ struct BroadcastView: View {
     private func saveConnection() {
         do {
             let profile = try ConnectionProfile(id: profileID ?? UUID(), name: profileName,
-                destination: destination, bitrateKbps: bitrate, chatChannel: chatChannel)
+                destination: destination, bitrateKbps: bitrate, chatChannel: chatChannel, videoPreset: model.videoPreset)
             if connections.save(profile) {
                 profileID = profile.id; profileName = profile.name
                 profileNotice = "Saved securely on this iPhone."
