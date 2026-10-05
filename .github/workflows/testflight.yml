@@ -1,0 +1,55 @@
+name: GNAB CAM IRL signed TestFlight build
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: New positive App Store build number
+        type: string
+        required: true
+      upload:
+        description: Upload to App Store Connect for TestFlight (not public App Store release)
+        type: boolean
+        default: false
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: gnab-testflight-signing
+  cancel-in-progress: false
+jobs:
+  sign:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 35
+    environment: apple-testflight
+    steps:
+      - name: Check out trusted main
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Validate signing helpers and core
+        run: |
+          python3 -m unittest discover -s ios/scripts -p 'test_*.py' -v
+          bash -n ios/scripts/archive-local.sh
+          swift test --package-path ios/Core
+      - name: Generate project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+      - name: Sign, verify and optionally upload
+        working-directory: ios
+        env:
+          GNAB_BUILD_NUMBER: ${{ inputs.build_number }}
+          GNAB_UPLOAD: ${{ inputs.upload }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: python3 scripts/ci_signing.py
+      # No signing directory, archive, IPA, profile, key or certificate is uploaded
+      # as a public workflow artifact. Temporary material is deleted in finally;
+      # the GitHub-hosted Mac itself is destroyed even after cancellation.
