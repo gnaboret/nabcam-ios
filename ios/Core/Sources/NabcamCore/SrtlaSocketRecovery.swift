@@ -4,6 +4,7 @@ import Foundation
 /// early silent-start retries, then slows down; explicit receiver delays win.
 public struct SrtlaSocketRecovery: Sendable {
     private var readyAt: Int64?
+    private var firstRegistrationAt: Int64?
     private var failedAt: Int64?
     private var receivedAny = false
     private var failureCount = 0
@@ -15,11 +16,19 @@ public struct SrtlaSocketRecovery: Sendable {
 
     public mutating func opened(at time: Int64) {
         guard accept(time) else { return }
-        readyAt = nil; failedAt = nil; receivedAny = false
+        readyAt = nil; firstRegistrationAt = nil; failedAt = nil; receivedAny = false
     }
     public mutating func ready(at time: Int64) {
         guard accept(time) else { return }
         readyAt = time
+        firstRegistrationAt = nil
+    }
+    /// Start silence detection only after REG1/REG2 is admitted to the socket.
+    /// A ready standby path can wait for another path's group negotiation; that
+    /// wait is not evidence that its own socket is unresponsive.
+    public mutating func registrationSent(at time: Int64) {
+        guard accept(time), readyAt != nil, firstRegistrationAt == nil else { return }
+        firstRegistrationAt = time
     }
     public mutating func received(at time: Int64, registered: Bool) {
         guard accept(time) else { return }
@@ -39,8 +48,13 @@ public struct SrtlaSocketRecovery: Sendable {
             return time - failedAt >= delay
         }
         guard socketReady, let readyAt else { return false }
+        let responseStart: Int64
+        if !receivedAny && !previouslyRegistered {
+            guard let firstRegistrationAt else { return false }
+            responseStart = max(readyAt, firstRegistrationAt)
+        } else { responseStart = readyAt }
         let wait: Int64 = !receivedAny && fastReopens < 2 && !previouslyRegistered ? 4000 : 12_000
-        return time - readyAt >= wait
+        return time - responseStart >= wait
     }
     public mutating func replacing(at time: Int64) {
         guard accept(time) else { return }

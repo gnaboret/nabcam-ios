@@ -304,7 +304,13 @@ final class SrtlaControlSession: @unchecked Sendable {
                         self.paths[pathID]?.traffic.record(bytes: count, retransmission: false, at: Self.now())
                     }
                 }
-            }) { paths[pathID]?.controlPacketsAdmitted &+= 1 }
+            }) {
+                paths[pathID]?.controlPacketsAdmitted &+= 1
+                let kind = SrtlaWire.type(transmission.bytes)
+                if kind == SrtlaWire.reg1 || kind == SrtlaWire.reg2 {
+                    paths[pathID]?.recovery.registrationSent(at: Self.now())
+                }
+            }
         }
     }
 

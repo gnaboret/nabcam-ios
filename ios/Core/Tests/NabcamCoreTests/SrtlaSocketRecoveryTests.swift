@@ -7,6 +7,7 @@ final class SrtlaSocketRecoveryTests: XCTestCase {
         for attempt in 0..<3 {
             let start = Int64(attempt * 10_000)
             history.opened(at: start); history.ready(at: start)
+            history.registrationSent(at: start)
             XCTAssertFalse(replace(history, at: start + 3999))
             XCTAssertEqual(replace(history, at: start + 4000), attempt < 2)
             XCTAssertTrue(replace(history, at: start + 12_000))
@@ -20,9 +21,11 @@ final class SrtlaSocketRecoveryTests: XCTestCase {
         history.opened(at: 0)
         XCTAssertFalse(history.shouldReplace(at: 50_000, registered: false, socketReady: false, serverRetryAfter: 0))
         history.ready(at: 50_000)
+        history.registrationSent(at: 50_000)
         XCTAssertFalse(replace(history, at: 53_999))
         XCTAssertTrue(replace(history, at: 54_000))
         history.ready(at: 60_000) // A recovered network gets a fresh response window.
+        history.registrationSent(at: 60_000)
         XCTAssertFalse(replace(history, at: 63_999))
         XCTAssertTrue(replace(history, at: 64_000))
     }
@@ -57,6 +60,19 @@ final class SrtlaSocketRecoveryTests: XCTestCase {
         history.received(at: 6040, registered: true); history.failed(at: 6050)
         XCTAssertFalse(replace(history, at: 8049)); XCTAssertTrue(replace(history, at: 8050))
         XCTAssertFalse(replace(history, at: 6049))
+    }
+    func testStandbyGetsAFullResponseWindowAfterItsFirstRegistration() {
+        var history = SrtlaSocketRecovery()
+        history.opened(at: 0); history.ready(at: 0)
+        XCTAssertFalse(replace(history, at: 4000), "Waiting for the group owner is not socket silence")
+        history.registrationSent(at: 4000)
+        XCTAssertFalse(replace(history, at: 4000), "Do not close the socket immediately after its first request")
+        history.registrationSent(at: 5000)
+        history.registrationSent(at: 7000)
+        XCTAssertFalse(replace(history, at: 7999))
+        XCTAssertTrue(replace(history, at: 8000), "Retries must not extend the first response deadline")
+        history.replacing(at: 8000); history.opened(at: 8000); history.ready(at: 8000)
+        XCTAssertFalse(replace(history, at: 20_000), "A replacement also needs an actual registration attempt")
     }
     private func replace(_ history: SrtlaSocketRecovery, at time: Int64) -> Bool {
         history.shouldReplace(at: time, registered: false, socketReady: true, serverRetryAfter: 0)
