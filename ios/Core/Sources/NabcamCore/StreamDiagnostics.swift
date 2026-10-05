@@ -7,6 +7,7 @@ public enum StreamDiagnosticEvent: Sendable {
     case captureActive(Bool), cameraChanged(front: Bool), microphoneMuted(Bool)
     case mirrorFront(Bool), clockEnabled(Bool), videoPreset(VideoPreset)
     case audioInterruption(began: Bool)
+    case watermarks(count: Int)
 
     fileprivate var description: String {
         switch self {
@@ -26,6 +27,7 @@ public enum StreamDiagnosticEvent: Sendable {
         case .clockEnabled(let enabled): "Encoded clock: \(enabled)"
         case .videoPreset(let mode): "Selected video mode: \(mode.label)"
         case .audioInterruption(let began): "iOS microphone interruption: \(began ? "began" : "ended")"
+        case .watermarks(let count): "Encoded image overlays configured: \(count)"
         }
     }
 }

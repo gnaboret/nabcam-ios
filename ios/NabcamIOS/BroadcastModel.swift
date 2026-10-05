@@ -26,6 +26,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var isTorchOn = false
     @Published private(set) var clockEnabled = false
     @Published private(set) var clockCorner: ClockCorner = .topRight
+    @Published private(set) var watermarks: [WatermarkConfiguration] = []
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
@@ -39,6 +40,7 @@ final class BroadcastModel: ObservableObject {
     private var audioInterrupted = false
     private var streamClock: StreamClock?
     private var clockTask: Task<Void, Never>?
+    private var streamWatermarks: StreamWatermarks?
 
     private func prepare() async {
         guard active, !audioInterrupted, !isReady, !isBusy else { return }
@@ -70,8 +72,14 @@ final class BroadcastModel: ObservableObject {
             let captureFPS = videoPreset.fps
             try await mixer.configuration(video: 0) { try $0.setFrameRate(captureFPS) }
             var mixing = await mixer.videoMixerSettings
-            mixing.mode = clockEnabled ? .offscreen : .passthrough
+            mixing.mode = (clockEnabled || !watermarks.isEmpty) ? .offscreen : .passthrough
             await mixer.setVideoMixerSettings(mixing)
+            if !watermarks.isEmpty {
+                let images = try await StreamWatermarks(configurations: watermarks,
+                    width: videoPreset.width, height: videoPreset.height)
+                streamWatermarks = images
+                try await images.install(on: mixer.screen, width: videoPreset.width, height: videoPreset.height)
+            }
             if clockEnabled {
                 let clock = await StreamClock()
                 try await clock.install(on: mixer.screen, corner: clockCorner,
@@ -408,6 +416,59 @@ final class BroadcastModel: ObservableObject {
         await setActive(true)
     }
 
+    func importWatermark(from url: URL) async {
+        guard active, !isLive, !isBusy, watermarks.count < 3 else { return }
+        let owner = generation
+        isBusy = true
+        do {
+            let data = try await Task.detached(priority: .userInitiated) {
+                try WatermarkConfiguration.read(url)
+            }.value
+            guard owner == generation, active else { return }
+            isBusy = false
+            var watermark = WatermarkConfiguration(data: data)
+            watermark.corner = [.bottomRight, .bottomLeft, .topLeft][watermarks.count]
+            await replaceWatermarks(watermarks + [watermark])
+        } catch {
+            guard owner == generation else { return }
+            isBusy = false
+            errorMessage = "Choose a PNG or JPEG image no larger than 4 MB. The file could not be opened."
+        }
+    }
+
+    func configureWatermark(id: UUID, corner: ClockCorner? = nil, percent: Int? = nil, remove: Bool = false) async {
+        var proposed = watermarks
+        guard let index = proposed.firstIndex(where: { $0.id == id }) else { return }
+        if remove { proposed.remove(at: index) }
+        else {
+            if let corner { proposed[index].corner = corner }
+            if let percent { proposed[index].percent = percent }
+        }
+        await replaceWatermarks(proposed)
+    }
+
+    private func replaceWatermarks(_ proposed: [WatermarkConfiguration]) async {
+        guard active, !isLive, !isBusy else { return }
+        let owner = generation
+        isBusy = true
+        do {
+            // Validate/rasterize before disturbing the working preview.
+            _ = try await StreamWatermarks(configurations: proposed,
+                width: videoPreset.width, height: videoPreset.height)
+            guard owner == generation, active else { return }
+            watermarks = proposed
+            diagnostics.append(.watermarks(count: proposed.count))
+            isBusy = false
+            await setActive(false)
+            guard UIApplication.shared.applicationState != .background else { return }
+            await setActive(true)
+        } catch {
+            guard owner == generation else { return }
+            isBusy = false
+            errorMessage = "This watermark could not be decoded. Use a PNG or JPEG up to 4 MB. Existing overlays were kept."
+        }
+    }
+
     private func startClockUpdates() {
         clockTask?.cancel()
         guard let clock = streamClock else { clockTask = nil; return }
@@ -425,6 +486,8 @@ final class BroadcastModel: ObservableObject {
         clockTask = nil
         if let clock = streamClock { await clock.remove() }
         streamClock = nil
+        if let images = streamWatermarks { await images.remove() }
+        streamWatermarks = nil
         await turnOffTorch()
         await mixer.stopRunning()
         try? await mixer.attachVideo(nil)

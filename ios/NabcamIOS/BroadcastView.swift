@@ -1,5 +1,6 @@
 import HaishinKit
 import AVFoundation
+import UniformTypeIdentifiers
 import SwiftUI
 import NabcamCore
 
@@ -20,6 +21,7 @@ struct BroadcastView: View {
     @State private var destination = ""
     @State private var bitrate = 1600
     @State private var chatChannel = ""
+    @State private var importWatermark = false
 
     var body: some View {
         ZStack {
@@ -163,6 +165,26 @@ struct BroadcastView: View {
                         Text("Preview chat only—it is not embedded in the outgoing video yet. Chat disconnects when you leave the app.").font(.caption)
                     }
                     Section("Stream overlays") {
+                        ForEach(Array(model.watermarks.enumerated()), id: \.element.id) { index, watermark in
+                            LabeledContent("Watermark \(index + 1)", value: "PNG / JPEG")
+                            Picker("Position", selection: Binding(get: { watermark.corner }, set: { corner in
+                                Task { await model.configureWatermark(id: watermark.id, corner: corner) }
+                            })) {
+                                ForEach(ClockCorner.allCases) { Text($0.rawValue).tag($0) }
+                            }.disabled(model.isLive || model.isBusy)
+                            Picker("Width", selection: Binding(get: { watermark.percent }, set: { percent in
+                                Task { await model.configureWatermark(id: watermark.id, percent: percent) }
+                            })) {
+                                ForEach([5, 10, 15, 20, 25, 30, 40], id: \.self) { Text("\($0)%").tag($0) }
+                            }.disabled(model.isLive || model.isBusy)
+                            Button("Remove watermark \(index + 1)", role: .destructive) {
+                                Task { await model.configureWatermark(id: watermark.id, remove: true) }
+                            }.disabled(model.isLive || model.isBusy)
+                        }
+                        Button("Add image watermark") { importWatermark = true }
+                            .disabled(model.isLive || model.isBusy || model.watermarks.count >= 3)
+                        Text("Up to 3 PNG/JPEG images, 4 MB each. Images are kept for this app session only. Transparent PNGs keep their transparency; tall images are limited to 40% of video height.")
+                            .font(.caption).foregroundStyle(.secondary)
                         Toggle("Clock in video", isOn: Binding(get: { model.clockEnabled }, set: { value in
                             Task { await model.configureClock(enabled: value, corner: model.clockCorner) }
                         })).disabled(model.isLive || model.isBusy)
@@ -178,7 +200,7 @@ struct BroadcastView: View {
                     }
                     Section("First iOS build") {
                         Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
-                        Text("Plain SRT is not SRTLA. Bonding, USB cameras, image/browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
+                        Text("Plain SRT is not SRTLA. Bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
                         Button("Restart camera preview") { Task { await model.restartPreview() } }
                             .disabled(model.isLive || model.isBusy)
                     }
@@ -192,6 +214,12 @@ struct BroadcastView: View {
                 .navigationTitle("Settings")
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
             }.tint(nabPurple)
+            .fileImporter(isPresented: $importWatermark, allowedContentTypes: [.png, .jpeg]) { result in
+                switch result {
+                case .success(let url): Task { await model.importWatermark(from: url) }
+                case .failure: model.errorMessage = "The image could not be selected. Try opening it from Files again."
+                }
+            }
             .confirmationDialog("Delete this saved connection?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete", role: .destructive) {
                     if let id = profileID, connections.delete(id: id) {
