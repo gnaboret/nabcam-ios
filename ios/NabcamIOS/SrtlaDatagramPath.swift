@@ -34,6 +34,12 @@ final class SrtlaDatagramPath: @unchecked Sendable {
         self.onEvent = onEvent
     }
 
+    /// The local relay supplies an accepted UDP flow from its loopback listener.
+    init(acceptedConnection: NWConnection, onEvent: @escaping @Sendable (Event) -> Void) {
+        connection = acceptedConnection
+        self.onEvent = onEvent
+    }
+
     func start() {
         lock.lock()
         guard !started, !closed else { lock.unlock(); return }

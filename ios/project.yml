@@ -74,6 +74,7 @@ targets:
       - path: NabcamIOS/MixerAudioMonitor.swift
       - path: NabcamIOS/SrtlaDatagramPath.swift
       - path: NabcamIOS/SrtlaControlSession.swift
+      - path: NabcamIOS/SrtLocalRelaySocket.swift
     dependencies:
       - package: NabcamCore
       - package: HaishinKit
