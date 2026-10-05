@@ -46,6 +46,10 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
         let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10))
+        let flashlightShortcut = app.switches["hub-flashlight-toggle"]
+        XCTAssertTrue(fullyVisible(flashlightShortcut, in: app, form: form))
+        XCTAssertEqual(flashlightShortcut.value as? String, "0")
+        setSwitch(flashlightShortcut, to: "1", app: app, name: "flashlight-shortcut")
         let hubSwap = app.switches["hub-swap-toggle"]
         XCTAssertTrue(fullyVisible(hubSwap, in: app, form: form))
         XCTAssertEqual(hubSwap.value as? String, "0")
@@ -56,9 +60,15 @@ final class SettingsUITests: XCTestCase {
         XCTAssertLessThan(settings.frame.maxX, hud.frame.minX)
         XCTAssertEqual(app.buttons["MIC ON"].frame, microphoneFrame)
         XCTAssertEqual(app.buttons["SELFIE"].frame, cameraFrame)
+        if cameraUnavailable {
+            XCTAssertFalse(app.buttons["Turn flashlight on"].exists,
+                           "A shortcut preference must not invent unsupported camera hardware")
+        }
         attach("preview-hub-settings-on-left", app: app)
         settings.tap()
         XCTAssertTrue(hubSwap.waitForExistence(timeout: 5))
+        XCTAssertEqual(flashlightShortcut.value as? String, "1")
+        setSwitch(flashlightShortcut, to: "0", app: app, name: "flashlight-shortcut")
         setSwitch(hubSwap, to: "0", app: app, name: "hub")
         app.buttons["Done"].tap()
         XCTAssertTrue(hud.waitForExistence(timeout: 5))

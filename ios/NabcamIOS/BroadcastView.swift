@@ -25,6 +25,7 @@ struct BroadcastView: View {
     @State private var chatChannel = ""
     @State private var importWatermark = false
     @AppStorage("hub.settingsOnLeft") private var settingsOnLeft = false
+    @AppStorage("hub.showFlashlightButton") private var showFlashlightButton = false
 
     var body: some View {
         ZStack {
@@ -64,7 +65,7 @@ struct BroadcastView: View {
                     .accessibilityLabel("Local audio output level")
                     Button(model.isMuted ? "MIC OFF" : "MIC ON") { Task { await model.toggleMute() } }
                         .disabled(!model.isReady || model.isBusy)
-                    if model.hasTorch {
+                    if showFlashlightButton && model.hasTorch {
                         Button { Task { await model.toggleTorch() } } label: {
                             Image(systemName: model.isTorchOn ? "flashlight.on.fill" : "flashlight.off.fill")
                         }.accessibilityLabel(model.isTorchOn ? "Turn flashlight off" : "Turn flashlight on")
@@ -109,6 +110,10 @@ struct BroadcastView: View {
                         Toggle("Settings on left", isOn: $settingsOnLeft)
                             .accessibilityIdentifier("hub-swap-toggle")
                         Text("Swaps only the purple Settings button and status panel. Chat and camera controls stay put. Saved on this device.")
+                            .font(.caption).foregroundStyle(nabPurple)
+                        Toggle("Show flashlight button", isOn: $showFlashlightButton)
+                            .accessibilityIdentifier("hub-flashlight-toggle")
+                        Text("Adds a shortcut beside the microphone when the camera has a flashlight. Hiding it does not turn the light off; Camera settings still controls it.")
                             .font(.caption).foregroundStyle(nabPurple)
                     }
                     Section("Camera") {
