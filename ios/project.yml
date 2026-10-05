@@ -72,6 +72,7 @@ targets:
       - path: NabcamIOS/OverlayCorner.swift
       - path: NabcamIOS/OverlayPreferencesStore.swift
       - path: NabcamIOS/MixerAudioMonitor.swift
+      - path: NabcamIOS/SrtlaDatagramPath.swift
     dependencies:
       - package: NabcamCore
       - package: HaishinKit
