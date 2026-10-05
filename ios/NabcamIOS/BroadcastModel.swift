@@ -27,6 +27,9 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var clockEnabled = false
     @Published private(set) var clockCorner: ClockCorner = .topRight
     @Published var errorMessage: String?
+    private var diagnostics = StreamDiagnostics()
+    var diagnosticReport: String { diagnostics.report() }
+    func clearDiagnostics() { diagnostics.clear() }
     let mixer = MediaMixer()
     private var session: (any Session)?
     private var connectionTask: Task<Void, Never>?
@@ -40,11 +43,13 @@ final class BroadcastModel: ObservableObject {
         guard active, !isReady, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
+        diagnostics.append(.captureRequested(videoPreset))
         let camera = await AVCaptureDevice.requestAccess(for: .video)
         let microphone = await AVCaptureDevice.requestAccess(for: .audio)
         guard active else { return }
         guard camera && microphone else {
             status = "Permissions needed"
+            diagnostics.append(.permissionsDenied)
             errorMessage = "Allow Camera and Microphone in iOS Settings, then return to GNAB CAM IRL."
             return
         }
@@ -76,12 +81,14 @@ final class BroadcastModel: ObservableObject {
             guard active else { await releaseCapture(); return }
             await mixer.startRunning()
             isReady = true
+            diagnostics.append(.captureReady)
             startClockUpdates()
             await refreshCameraControls()
             status = "Preview · requested \(videoPreset.label)"
         } catch {
             await releaseCapture()
             status = "Camera unavailable"
+            diagnostics.append(.captureFailed)
             errorMessage = "Could not start \(videoPreset.label). This camera may not support that mode. Try 720p / 30 FPS, check permissions and close other camera apps."
         }
     }
@@ -100,6 +107,7 @@ final class BroadcastModel: ObservableObject {
         isBusy = true
         isConnecting = true
         status = "Connecting · \(validated.protocolName)"
+        diagnostics.append(.connecting(bitrateKbps: bitrateKbps))
         connectionTask = Task {
             var candidate: (any Session)?
             do {
@@ -127,6 +135,7 @@ final class BroadcastModel: ObservableObject {
                         guard let self, self.generation == owner else { return }
                         await self.stop()
                         self.status = "Disconnected · tap Start to retry"
+                        self.diagnostics.append(.disconnected)
                     }
                 }
                 guard owner == generation, !Task.isCancelled else {
@@ -137,6 +146,7 @@ final class BroadcastModel: ObservableObject {
                 isBusy = false
                 isConnecting = false
                 isLive = true
+                diagnostics.append(.connected)
                 status = "LIVE · \(validated.protocolName) · target \(bitrateKbps) kbps"
                 UIApplication.shared.isIdleTimerDisabled = true
             } catch {
@@ -150,6 +160,7 @@ final class BroadcastModel: ObservableObject {
                 isConnecting = false
                 isLive = false
                 status = "Connection failed"
+                diagnostics.append(.connectionFailed)
                 // Never expose a stream URL/key through a transport error description.
                 errorMessage = "Could not publish. Check the destination, stream key, receiver availability and protocol. SRTLA is not supported in this first iOS build."
             }
@@ -173,6 +184,7 @@ final class BroadcastModel: ObservableObject {
         await task?.value
         UIApplication.shared.isIdleTimerDisabled = false
         status = "Stopped"
+        diagnostics.append(.stopped)
         isBusy = false
     }
 
@@ -185,6 +197,7 @@ final class BroadcastModel: ObservableObject {
         do {
             try await mixer.attachVideo(device)
             isFront.toggle()
+            diagnostics.append(.cameraChanged(front: isFront))
             try await applyCameraMirroring()
             let captureFPS = videoPreset.fps
             try await mixer.configuration(video: 0) { try $0.setFrameRate(captureFPS) }
@@ -203,7 +216,10 @@ final class BroadcastModel: ObservableObject {
         defer { isBusy = false }
         let previous = mirrorFrontCamera
         mirrorFrontCamera = enabled
-        do { try await applyCameraMirroring() }
+        do {
+            try await applyCameraMirroring()
+            diagnostics.append(.mirrorFront(enabled))
+        }
         catch {
             mirrorFrontCamera = previous
             errorMessage = "Mirroring is unavailable on this camera. Your previous setting was kept."
@@ -314,9 +330,11 @@ final class BroadcastModel: ObservableObject {
         track.isMuted = isMuted
         settings.tracks[0] = track
         await mixer.setAudioMixerSettings(settings)
+        diagnostics.append(.microphoneMuted(isMuted))
     }
 
     func setActive(_ value: Bool) async {
+        diagnostics.append(.captureActive(value))
         active = value
         // Serialize rapid background/foreground transitions, including permission dialogs.
         let previous = lifecycleTask
@@ -337,6 +355,7 @@ final class BroadcastModel: ObservableObject {
     func configureClock(enabled: Bool, corner: ClockCorner) async {
         guard active, !isLive, !isBusy else { return }
         clockEnabled = enabled
+        diagnostics.append(.clockEnabled(enabled))
         clockCorner = corner
         await setActive(false)
         // Do not restart capture if iOS sent the app to the background during teardown.
@@ -348,6 +367,7 @@ final class BroadcastModel: ObservableObject {
         guard active, !isLive, !isBusy else { return }
         guard preset != videoPreset || !isReady else { return }
         videoPreset = preset
+        diagnostics.append(.videoPreset(preset))
         await setActive(false)
         guard UIApplication.shared.applicationState != .background else { return }
         await setActive(true)

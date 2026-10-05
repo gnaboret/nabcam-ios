@@ -170,6 +170,12 @@ struct BroadcastView: View {
                         Button("Restart camera preview") { Task { await model.setActive(false); await model.setActive(true) } }
                             .disabled(model.isLive || model.isBusy)
                     }
+                    Section("Diagnostics") {
+                        ShareLink("Share diagnostic timeline", item: model.diagnosticReport)
+                        Button("Clear diagnostic timeline", role: .destructive) { model.clearDiagnostics() }
+                        Text("Last 300 events, held in memory. No stream keys or chat contents. This is an event timeline, not a measurement of receiver audio sync or network quality.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 .navigationTitle("Settings")
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showSettings = false } } }
