@@ -35,6 +35,12 @@ public struct SrtlaEndpoint: Sendable, CustomStringConvertible, CustomDebugStrin
         for item in parts.queryItems ?? [] where item.name.lowercased() == "mode" {
             guard item.value?.lowercased() == "caller" else { throw ValidationError.callerRequired }
         }
+        // HaishinKit 2.2.5 treats an adapter option without an explicit mode as
+        // rendezvous. This bridge owns the local socket and only supports caller
+        // mode; do not let receiver options change its local bind/mode implicitly.
+        guard !(parts.queryItems ?? []).contains(where: {
+            ["adapter", "port"].contains($0.name.lowercased())
+        }) else { throw ValidationError.callerRequired }
         // URLComponents can retain brackets around an IPv6 literal; NWEndpoint.Host
         // expects the literal itself. Leave DNS names and zone IDs otherwise intact.
         host = rawHost.hasPrefix("[") && rawHost.hasSuffix("]") ? String(rawHost.dropFirst().dropLast()) : rawHost

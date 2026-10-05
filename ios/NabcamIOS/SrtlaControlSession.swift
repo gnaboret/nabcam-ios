@@ -339,7 +339,13 @@ final class SrtlaControlSession: @unchecked Sendable {
         let now = Self.now()
         let isMedia = controls.isEmpty
         guard let id = choosePath(media: isMedia, at: now), let path = paths[id] else {
-            if pacer.queuedPackets > 0 || !controls.isEmpty { scheduleDrain(after: 20) }
+            // A short retry is useful only for a registered socket's temporary
+            // write backoff. Offline/unregistered paths already wake drain from
+            // receive/ready events and the control timer; avoid 50 Hz idle work
+            // throughout an outage while retaining the bounded packet queue.
+            if (pacer.queuedPackets > 0 || !controls.isEmpty), paths.contains(where: {
+                $0.value.state == .ready && registration.isRegistered($0.key)
+            }) { scheduleDrain(after: 20) }
             return
         }
         let submission = isMedia ? pacer.take(at: now, kbps: rate) : nil

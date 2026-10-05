@@ -22,6 +22,8 @@ final class SrtlaEndpointTests: XCTestCase {
         for input in ["", "https://host:9000", "srtla://host", "srtla://host:0", "srtla://host:65536",
                       "srtla://user:password@host:9000", "srtla://host:9000/path", "srtla://host:9000#key",
                       "srtla://host:9000?mode=listener", "srtla://host:9000?mode=caller&mode=rendezvous",
+                      "srtla://host:9000?adapter=0.0.0.0", "srtla://host:9000?mode=caller&adapter=127.0.0.1",
+                      "srtla://host:9000?ADAPTER=0.0.0.0", "srtla://host:9000?port=12345",
                       "srtla://host:9000?streamid=unescaped space", String(repeating: "a", count: 8193)] {
             XCTAssertThrowsError(try SrtlaEndpoint(input))
         }
