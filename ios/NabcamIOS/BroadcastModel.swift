@@ -133,7 +133,8 @@ final class BroadcastModel: ObservableObject {
         }
     }
 
-    func start(destination: String, bitrateKbps: Int, codec: VideoCodecChoice = .h264) {
+    func start(destination: String, bitrateKbps: Int, codec: VideoCodecChoice = .h264,
+               audioBitrate: AudioBitrate = .kbps96) {
         guard active, !audioInterrupted, isReady, !isBusy, session == nil else { return }
         let validated: StreamDestination
         do {
@@ -156,6 +157,7 @@ final class BroadcastModel: ObservableObject {
         status = "Connecting · \(validated.protocolName)"
         diagnostics.append(.connecting(bitrateKbps: bitrateKbps))
         diagnostics.append(.encoderRequested(codec))
+        diagnostics.append(.audioEncoderRequested(audioBitrate))
         connectionTask = Task {
             var candidate: (any Session)?
             var candidateRelay: SrtlaControlSession?
@@ -164,7 +166,7 @@ final class BroadcastModel: ObservableObject {
                 var publishingURL = validated.url
                 if validated.requiresSrtlaRelay {
                     let relay = try SrtlaControlSession(endpoint: SrtlaEndpoint(validated.url.absoluteString),
-                        pacingKbps: SrtlaPacketPacer.rate(videoKbps: bitrateKbps, audioKbps: 96, headroomPercent: 125))
+                        pacingKbps: SrtlaPacketPacer.rate(videoKbps: bitrateKbps, audioKbps: audioBitrate.rawValue, headroomPercent: 125))
                     candidateRelay = relay
                     srtlaRelay = relay
                     relay.start()
@@ -190,7 +192,7 @@ final class BroadcastModel: ObservableObject {
                 await next.setMaxRetryCount(0)
                 let stream = await next.stream
                 try await stream.setVideoSettings(VideoEncoderConfiguration.settings(codec: codec, preset: videoPreset, bitrateKbps: bitrateKbps))
-                try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000, sampleRate: 48_000))
+                try await stream.setAudioSettings(AudioCodecSettings(bitRate: audioBitrate.bitsPerSecond, sampleRate: 48_000))
                 await mixer.addOutput(stream)
                 try Task.checkCancellation()
                 try await next.connect { [weak self] in

@@ -7,6 +7,7 @@ public enum StreamDiagnosticEvent: Sendable {
     case captureRequested(VideoPreset), captureReady, captureFailed, permissionsDenied
     case connecting(bitrateKbps: Int), connected, connectionFailed, disconnected, stopped
     case encoderRequested(VideoCodecChoice)
+    case audioEncoderRequested(AudioBitrate)
     case captureActive(Bool), cameraChanged(front: Bool), microphoneMuted(Bool)
     case cameraSwitchStarted(front: Bool, live: Bool), cameraSwitchRestored, cameraSwitchFailed
     case mirrorFront(Bool), clockEnabled(Bool), videoPreset(VideoPreset)
@@ -24,6 +25,7 @@ public enum StreamDiagnosticEvent: Sendable {
         case .permissionsDenied: "Camera or microphone permission denied"
         case .connecting(let rate): "Publish requested: encoder target \(rate) kbps"
         case .encoderRequested(let codec): "Encoder requested: \(codec.label) Main, 8-bit input, AAC; actual encoder output not verified"
+        case .audioEncoderRequested(let rate): "Audio encoder requested: AAC \(rate.label), 48000 Hz; not a microphone gain or measured output rate"
         case .connected: "Transport connected (receiver playback not verified)"
         case .connectionFailed: "Transport connection failed"
         case .disconnected: "Transport disconnected"

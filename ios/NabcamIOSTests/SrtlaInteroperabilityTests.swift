@@ -17,7 +17,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
     private static let session = SrtPublishSession()
 
     func testHaishinKitPublishesEncryptedAudioThroughTwoPathRelay() async throws {
-        try await exerciseStream(blackholeOnePath: false)
+        try await exerciseStream(blackholeOnePath: false, audioBitrate: .kbps192)
     }
 
     func testEncryptedStreamContinuesWhenOneRegisteredPathStopsReplying() async throws {
@@ -29,7 +29,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
     }
 
     func testEscapedStreamIDAndPassphraseReachReceiverUnchanged() async throws {
-        try await exerciseStream(blackholeOnePath: false, escapedCredentials: true)
+        try await exerciseStream(blackholeOnePath: false, escapedCredentials: true, audioBitrate: .kbps128)
     }
 
     func testUnencryptedDestinationClearsPreviouslyConfiguredCredentials() async throws {
@@ -38,7 +38,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         let old = try SrtConnectionOptions(XCTUnwrap(URL(string:
             "srt://127.0.0.1:9000?streamid=stale-fixture&passphrase=stale-test-secret")))
         try await old.apply(to: Self.session.connection)
-        try await exerciseStream(blackholeOnePath: false, encrypted: false)
+        try await exerciseStream(blackholeOnePath: false, encrypted: false, audioBitrate: .kbps64)
     }
 
     func testStopDuringNativeConnectionDoesNotPublishLater() async throws {
@@ -70,7 +70,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
     }
 
     private func exerciseStream(blackholeOnePath: Bool, escapedCredentials: Bool = false, encrypted: Bool = true,
-                                videoFormatChange: Bool = false) async throws {
+                                videoFormatChange: Bool = false, audioBitrate: AudioBitrate = .kbps96) async throws {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
         let session = Self.session
@@ -106,7 +106,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         XCTAssertEqual(relay.snapshot().filter { $0.state == .registered }.count, 2)
         do {
             try await session.configure(url, expectedMedias: videoFormatChange ? [.audio, .video] : [.audio])
-            try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000, sampleRate: 48_000))
+            try await stream.setAudioSettings(AudioCodecSettings(bitRate: audioBitrate.bitsPerSecond, sampleRate: 48_000))
             if videoFormatChange {
                 try await stream.setVideoSettings(VideoEncoderConfiguration.settings(codec: .h264, preset: .hd30, bitrateKbps: 600))
             }

@@ -9,10 +9,11 @@ public struct ConnectionProfile: Codable, Identifiable, Equatable, Sendable {
     // Optional on disk so first-version profiles remain readable.
     public var videoPreset: VideoPreset?
     public var videoCodec: VideoCodecChoice?
+    public var audioBitrate: AudioBitrate?
 
     public init(id: UUID = UUID(), name: String, destination: String,
                 bitrateKbps: Int, chatChannel: String = "", videoPreset: VideoPreset? = .hd30,
-                videoCodec: VideoCodecChoice? = .h264) throws {
+                videoCodec: VideoCodecChoice? = .h264, audioBitrate: AudioBitrate? = .kbps96) throws {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty, name.count <= 60, destination.utf8.count <= 8192,
               (444...12000).contains(bitrateKbps), chatChannel.count <= 50 else {
@@ -29,11 +30,13 @@ public struct ConnectionProfile: Codable, Identifiable, Equatable, Sendable {
         self.chatChannel = chatChannel
         self.videoPreset = videoPreset
         self.videoCodec = videoCodec
+        self.audioBitrate = audioBitrate
     }
 
     public func validated() throws -> Self {
         try Self(id: id, name: name, destination: destination,
-                 bitrateKbps: bitrateKbps, chatChannel: chatChannel, videoPreset: videoPreset, videoCodec: videoCodec)
+                 bitrateKbps: bitrateKbps, chatChannel: chatChannel, videoPreset: videoPreset, videoCodec: videoCodec,
+                 audioBitrate: audioBitrate)
     }
 }
 

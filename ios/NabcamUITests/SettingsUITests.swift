@@ -75,6 +75,14 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(fullyVisible(codec, in: app, form: form))
         XCTAssertTrue(codec.label.contains("H.264") || (codec.value as? String)?.contains("H.264") == true)
         attach("settings-video-codec", app: app)
+        let audio = app.descendants(matching: .any).matching(identifier: "audio-bitrate-picker").firstMatch
+        for _ in 0..<24 {
+            if fullyVisible(audio, in: app, form: form) { break }
+            scroll(form, toward: audio)
+        }
+        XCTAssertTrue(fullyVisible(audio, in: app, form: form))
+        XCTAssertTrue(audio.label.contains("96 kbps") || (audio.value as? String)?.contains("96 kbps") == true)
+        attach("settings-audio", app: app)
         let addWatermark = app.buttons["Add image watermark"]
         for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }
