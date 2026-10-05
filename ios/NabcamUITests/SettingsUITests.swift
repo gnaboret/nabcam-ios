@@ -45,9 +45,10 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(form.waitForExistence(timeout: 10))
         attach("settings-camera", app: app)
         let addWatermark = app.buttons["Add image watermark"]
-        for _ in 0..<40 {
+        for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }
             scroll(form, toward: addWatermark)
+            if attempt % 10 == 9 { attach("overlay-scroll-\(attempt + 1)", app: app) }
         }
         attach("settings-overlays", app: app)
         XCTAssertTrue(addWatermark.exists)
@@ -86,11 +87,15 @@ final class SettingsUITests: XCTestCase {
     }
 
     private func scroll(_ form: XCUIElement, toward element: XCUIElement) {
-        // Short drags avoid jumping over an entire button between observations.
-        // If it has moved behind the navigation bar, correct upward instead.
+        // Search with a larger stroke, then use small positioning corrections.
+        // The leading inset avoids dragging through text fields and pickers.
+        // Keep intermediate screenshots so stalled gestures can be distinguished
+        // from simply exhausting the search before reaching a lazy Form row.
         let reverse = element.exists && element.frame.midY < form.frame.midY
-        let start = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
-        let end = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: reverse ? 0.73 : 0.37))
+        let startY = element.exists ? 0.6 : 0.8
+        let endY = element.exists ? (reverse ? 0.78 : 0.42) : 0.4
+        let start = form.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: startY))
+        let end = form.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: endY))
         start.press(forDuration: 0.1, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
     }
 }
