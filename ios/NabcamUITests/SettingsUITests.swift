@@ -44,6 +44,10 @@ final class SettingsUITests: XCTestCase {
         let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10))
         attach("settings-camera", app: app)
+        if app.staticTexts["capture-status"].label == "Camera unavailable" {
+            XCTAssertFalse(app.switches["Lock focus"].exists)
+            XCTAssertFalse(app.switches["Lock exposure"].exists)
+        }
         let relayToggle = app.switches["experimental-srtla-toggle"]
         for _ in 0..<24 {
             if fullyVisible(relayToggle, in: app, form: form) { break }

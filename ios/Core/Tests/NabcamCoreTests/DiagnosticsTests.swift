@@ -2,6 +2,13 @@ import XCTest
 @testable import NabcamCore
 
 final class DiagnosticsTests: XCTestCase {
+    func testCameraLocksAreRecordedAsAppliedSettingsNotCaptureQuality() {
+        var log = StreamDiagnostics()
+        log.append(.focusLocked(true))
+        log.append(.exposureLocked(false))
+        XCTAssertTrue(log.report().contains("Camera focus lock applied: true"))
+        XCTAssertTrue(log.report().contains("Camera exposure lock applied: false"))
+    }
     func testRelayTrafficDescribesMeasurementBoundariesAndRetryCounts() {
         var meter = DatagramRateMeter()
         meter.record(bytes: 1000, retransmission: true, at: 100)

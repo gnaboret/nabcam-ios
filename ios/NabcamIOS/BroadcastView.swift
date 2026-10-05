@@ -130,6 +130,20 @@ struct BroadcastView: View {
                             Text("Digital zoom crops the camera image; higher zoom can reduce detail.")
                                 .font(.caption).foregroundStyle(.secondary)
                         } else { Text("Zoom is unavailable on this camera.").font(.caption) }
+                        if model.canLockFocus {
+                            Toggle("Lock focus", isOn: Binding(get: { model.isFocusLocked }, set: { value in
+                                Task { await model.setFocusLocked(value) }
+                            })).disabled(!model.isReady || model.isBusy)
+                            Text("Keeps the current focus distance. Turn off to resume autofocus.")
+                                .font(.caption).foregroundStyle(nabPurple)
+                        }
+                        if model.canLockExposure {
+                            Toggle("Lock exposure", isOn: Binding(get: { model.isExposureLocked }, set: { value in
+                                Task { await model.setExposureLocked(value) }
+                            })).disabled(!model.isReady || model.isBusy)
+                            Text("Keeps the current exposure. Turn off to follow changing light. Locks apply to the current camera, not a saved connection.")
+                                .font(.caption).foregroundStyle(nabPurple)
+                        }
                         if model.hasTorch {
                             Toggle("Flashlight", isOn: Binding(get: { model.isTorchOn }, set: { value in
                                 if value != model.isTorchOn { Task { await model.toggleTorch() } }

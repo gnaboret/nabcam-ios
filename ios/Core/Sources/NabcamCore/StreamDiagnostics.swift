@@ -11,6 +11,7 @@ public enum StreamDiagnosticEvent: Sendable {
     case captureActive(Bool), cameraChanged(front: Bool), microphoneMuted(Bool)
     case cameraSwitchStarted(front: Bool, live: Bool), cameraSwitchRestored, cameraSwitchFailed
     case mirrorFront(Bool), clockEnabled(Bool), videoPreset(VideoPreset)
+    case focusLocked(Bool), exposureLocked(Bool)
     case audioInterruption(began: Bool)
     case watermarks(count: Int)
     case frameRates(camera: Double, mixed: Double, cameraGapMs: Double, mixedGapMs: Double)
@@ -37,6 +38,8 @@ public enum StreamDiagnosticEvent: Sendable {
         case .cameraSwitchFailed: "Camera change and rollback failed; stopping capture and publish"
         case .microphoneMuted(let muted): "Microphone muted: \(muted)"
         case .mirrorFront(let mirrored): "Front camera mirroring: \(mirrored)"
+        case .focusLocked(let locked): "Camera focus lock applied: \(locked)"
+        case .exposureLocked(let locked): "Camera exposure lock applied: \(locked)"
         case .clockEnabled(let enabled): "Encoded clock: \(enabled)"
         case .videoPreset(let mode): "Selected video mode: \(mode.label)"
         case .audioInterruption(let began): "iOS microphone interruption: \(began ? "began" : "ended")"

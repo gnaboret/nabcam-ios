@@ -24,6 +24,10 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var minimumZoom = 1.0
     @Published private(set) var hasTorch = false
     @Published private(set) var isTorchOn = false
+    @Published private(set) var canLockFocus = false
+    @Published private(set) var isFocusLocked = false
+    @Published private(set) var canLockExposure = false
+    @Published private(set) var isExposureLocked = false
     @Published private(set) var clockEnabled = false
     @Published private(set) var clockCorner: ClockCorner = .topRight
     @Published private(set) var watermarks: [WatermarkConfiguration] = []
@@ -465,12 +469,64 @@ final class BroadcastModel: ObservableObject {
         } catch { errorMessage = "Could not change the flashlight. Try again when the camera is available." }
     }
 
+    func setFocusLocked(_ locked: Bool) async {
+        guard active, isReady, !isBusy, canLockFocus else { return }
+        isBusy = true
+        let owner = generation
+        defer { if owner == generation { isBusy = false } }
+        do {
+            try await mixer.configuration(video: 0) { unit in
+                guard let device = unit.device,
+                      device.isFocusModeSupported(.locked), device.isFocusModeSupported(.continuousAutoFocus) else {
+                    throw CaptureError.unavailable
+                }
+                try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                device.focusMode = locked ? .locked : .continuousAutoFocus
+            }
+            guard owner == generation, active else { return }
+            diagnostics.append(.focusLocked(locked))
+            await refreshCameraControls()
+        } catch {
+            guard owner == generation, active else { return }
+            errorMessage = "Focus control is temporarily unavailable on this camera."
+        }
+    }
+
+    func setExposureLocked(_ locked: Bool) async {
+        guard active, isReady, !isBusy, canLockExposure else { return }
+        isBusy = true
+        let owner = generation
+        defer { if owner == generation { isBusy = false } }
+        do {
+            try await mixer.configuration(video: 0) { unit in
+                guard let device = unit.device,
+                      device.isExposureModeSupported(.locked), device.isExposureModeSupported(.continuousAutoExposure) else {
+                    throw CaptureError.unavailable
+                }
+                try device.lockForConfiguration()
+                defer { device.unlockForConfiguration() }
+                device.exposureMode = locked ? .locked : .continuousAutoExposure
+            }
+            guard owner == generation, active else { return }
+            diagnostics.append(.exposureLocked(locked))
+            await refreshCameraControls()
+        } catch {
+            guard owner == generation, active else { return }
+            errorMessage = "Exposure control is temporarily unavailable on this camera."
+        }
+    }
+
     private struct CameraState: Sendable {
         let hasTorch: Bool
         let torchOn: Bool
         let minimum: Double
         let maximum: Double
         let zoom: Double
+        let canLockFocus: Bool
+        let focusLocked: Bool
+        let canLockExposure: Bool
+        let exposureLocked: Bool
     }
 
     private func refreshCameraControls() async {
@@ -485,13 +541,18 @@ final class BroadcastModel: ObservableObject {
                             torchOn: device.torchMode == .on,
                             minimum: Double(max(1, device.minAvailableVideoZoomFactor)),
                             maximum: Double(min(device.maxAvailableVideoZoomFactor, device.activeFormat.videoMaxZoomFactor)),
-                            zoom: Double(device.videoZoomFactor)))
+                            zoom: Double(device.videoZoomFactor),
+                            canLockFocus: device.isFocusModeSupported(.locked) && device.isFocusModeSupported(.continuousAutoFocus),
+                            focusLocked: device.focusMode == .locked,
+                            canLockExposure: device.isExposureModeSupported(.locked) && device.isExposureModeSupported(.continuousAutoExposure),
+                            exposureLocked: device.exposureMode == .locked))
                     }
                 } catch { continuation.resume(throwing: error) }
             }
         }
         guard isReady, let state else {
             hasTorch = false; isTorchOn = false; zoom = 1; minimumZoom = 1; maximumZoom = 1
+            canLockFocus = false; isFocusLocked = false; canLockExposure = false; isExposureLocked = false
             return
         }
         hasTorch = state.hasTorch
@@ -499,6 +560,10 @@ final class BroadcastModel: ObservableObject {
         minimumZoom = state.minimum
         maximumZoom = max(minimumZoom, state.maximum)
         zoom = state.zoom
+        canLockFocus = state.canLockFocus
+        isFocusLocked = state.focusLocked
+        canLockExposure = state.canLockExposure
+        isExposureLocked = state.exposureLocked
     }
 
     private func turnOffTorch() async {
