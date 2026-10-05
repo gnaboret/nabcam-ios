@@ -67,6 +67,14 @@ final class SettingsUITests: XCTestCase {
             scroll(form, toward: relayToggle)
         }
         setSwitch(relayToggle, to: "0", app: app)
+        let codec = app.descendants(matching: .any).matching(identifier: "video-codec-picker").firstMatch
+        for _ in 0..<24 {
+            if fullyVisible(codec, in: app, form: form) { break }
+            scroll(form, toward: codec)
+        }
+        XCTAssertTrue(fullyVisible(codec, in: app, form: form))
+        XCTAssertTrue(codec.label.contains("H.264") || (codec.value as? String)?.contains("H.264") == true)
+        attach("settings-video-codec", app: app)
         let addWatermark = app.buttons["Add image watermark"]
         for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }

@@ -37,6 +37,7 @@ final class BroadcastModel: ObservableObject {
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
+    let hardwareHEVC = VideoEncoderConfiguration.hardwareHEVC
     func clearDiagnostics() { diagnostics.clear() }
     let mixer = MediaMixer()
     private var session: (any Session)?
@@ -132,10 +133,13 @@ final class BroadcastModel: ObservableObject {
         }
     }
 
-    func start(destination: String, bitrateKbps: Int) {
+    func start(destination: String, bitrateKbps: Int, codec: VideoCodecChoice = .h264) {
         guard active, !audioInterrupted, isReady, !isBusy, session == nil else { return }
         let validated: StreamDestination
-        do { validated = try StreamDestination(destination) }
+        do {
+            validated = try StreamDestination(destination)
+            try codec.validate(destination: validated, hardwareHEVC: hardwareHEVC)
+        }
         catch { errorMessage = error.localizedDescription; return }
         guard !validated.requiresSrtlaRelay || experimentalSrtlaEnabled else {
             errorMessage = "Enable Experimental SRTLA in Connection settings to test this destination. iPhone failover has not been verified yet."
@@ -151,6 +155,7 @@ final class BroadcastModel: ObservableObject {
         isConnecting = true
         status = "Connecting · \(validated.protocolName)"
         diagnostics.append(.connecting(bitrateKbps: bitrateKbps))
+        diagnostics.append(.encoderRequested(codec))
         connectionTask = Task {
             var candidate: (any Session)?
             var candidateRelay: SrtlaControlSession?
@@ -184,11 +189,7 @@ final class BroadcastModel: ObservableObject {
                 session = next
                 await next.setMaxRetryCount(0)
                 let stream = await next.stream
-                try await stream.setVideoSettings(VideoCodecSettings(
-                    videoSize: .init(width: videoPreset.width, height: videoPreset.height), bitRate: bitrateKbps * 1000,
-                    profileLevel: kVTProfileLevel_H264_Main_AutoLevel as String,
-                    bitRateMode: .average, maxKeyFrameIntervalDuration: 2,
-                    allowFrameReordering: false, expectedFrameRate: videoPreset.fps))
+                try await stream.setVideoSettings(VideoEncoderConfiguration.settings(codec: codec, preset: videoPreset, bitrateKbps: bitrateKbps))
                 try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000, sampleRate: 48_000))
                 await mixer.addOutput(stream)
                 try Task.checkCancellation()

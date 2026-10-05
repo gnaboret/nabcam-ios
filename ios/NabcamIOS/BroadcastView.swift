@@ -20,6 +20,7 @@ struct BroadcastView: View {
     @State private var profileNotice: String?
     @State private var destination = ""
     @State private var bitrate = 1600
+    @State private var videoCodec: VideoCodecChoice = .h264
     @State private var chatChannel = ""
     @State private var importWatermark = false
 
@@ -143,6 +144,7 @@ struct BroadcastView: View {
                                 Button(profile.name) {
                                     profileID = profile.id; profileName = profile.name
                                     destination = profile.destination; bitrate = profile.bitrateKbps
+                                    videoCodec = profile.videoCodec ?? .h264
                                     chatChannel = profile.chatChannel; profileNotice = nil
                                     Task { await model.configureVideo(profile.videoPreset ?? .hd30) }
                                 }
@@ -153,7 +155,7 @@ struct BroadcastView: View {
                         SecureField("Full RTMP / RTMPS / SRT / SRTLA URL", text: $destination)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .disabled(model.isLive || model.isBusy)
-                        Text("Include your stream key in the URL. Save stores this connection, video mode, bitrate and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
+                        Text("Include your stream key in the URL. Save stores this connection, video mode, codec, bitrate and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
                         Toggle("Experimental SRTLA", isOn: Binding(get: { model.experimentalSrtlaEnabled }, set: {
                             model.setExperimentalSrtla($0)
                         })).disabled(model.isLive || model.isBusy).accessibilityIdentifier("experimental-srtla-toggle")
@@ -176,6 +178,16 @@ struct BroadcastView: View {
                         if let profileNotice { Text(profileNotice).font(.caption).foregroundStyle(nabPurple) }
                     }
                     Section("Video") {
+                        Picker("Video codec", selection: $videoCodec) {
+                            Text("H.264").tag(VideoCodecChoice.h264)
+                            Text(model.hardwareHEVC ? "HEVC (H.265)" : "HEVC — hardware unavailable")
+                                .tag(VideoCodecChoice.hevc).disabled(!model.hardwareHEVC)
+                        }.disabled(model.isLive || model.isBusy)
+                            .accessibilityIdentifier("video-codec-picker")
+                        if videoCodec == .hevc {
+                            Text("HEVC Main, 8-bit. SRT/SRTLA only in this build; your receiver and onward service must support it. Real-iPhone encoding and playback still need testing.")
+                                .font(.caption).foregroundStyle(nabPurple)
+                        }
                         Picker("Resolution / FPS", selection: Binding(get: { model.videoPreset }, set: { preset in
                             Task { await model.configureVideo(preset) }
                         })) {
@@ -184,7 +196,7 @@ struct BroadcastView: View {
                         Picker("Target bitrate", selection: $bitrate) {
                             ForEach([444, 800, 1200, 1600, 2500, 4000, 6000], id: \.self) { Text("\($0) kbps").tag($0) }
                         }.disabled(model.isLive || model.isBusy)
-                        Text("This selects the requested rate. The HUD measures camera and compositor output separately—not the receiver’s FPS. Unsupported camera modes show an error. H.264 + AAC; no adaptive controller yet.").font(.caption)
+                        Text("This selects the requested average rate. The HUD measures camera and compositor output separately—not the receiver’s FPS. Unsupported camera modes show an error. AAC audio; no adaptive controller yet.").font(.caption)
                     }
                     Section("Chat") {
                         TextField("Kick channel name", text: $chatChannel)
@@ -269,7 +281,7 @@ struct BroadcastView: View {
             }
         }
         .confirmationDialog("Start broadcasting camera and microphone?", isPresented: $confirmLive, titleVisibility: .visible) {
-            Button("Go live") { model.start(destination: destination, bitrateKbps: bitrate) }
+            Button("Go live") { model.start(destination: destination, bitrateKbps: bitrate, codec: videoCodec) }
         }
         .alert("GNAB CAM IRL", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
@@ -279,7 +291,7 @@ struct BroadcastView: View {
     private func saveConnection() {
         do {
             let profile = try ConnectionProfile(id: profileID ?? UUID(), name: profileName,
-                destination: destination, bitrateKbps: bitrate, chatChannel: chatChannel, videoPreset: model.videoPreset)
+                destination: destination, bitrateKbps: bitrate, chatChannel: chatChannel, videoPreset: model.videoPreset, videoCodec: videoCodec)
             if connections.save(profile) {
                 profileID = profile.id; profileName = profile.name
                 profileNotice = "Saved securely on this iPhone."
