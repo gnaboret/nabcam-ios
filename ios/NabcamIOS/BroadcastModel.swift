@@ -27,7 +27,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var clockEnabled = false
     @Published private(set) var clockCorner: ClockCorner = .topRight
     @Published var errorMessage: String?
-    private var diagnostics = StreamDiagnostics()
+    @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
     func clearDiagnostics() { diagnostics.clear() }
     let mixer = MediaMixer()
