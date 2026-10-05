@@ -45,7 +45,26 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: false
+  NabcamStorageTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NabcamIOSTests
+      - path: NabcamIOS/ConnectionProfiles.swift
+    dependencies:
+      - package: NabcamCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-tests
+        GENERATE_INFOPLIST_FILE: true
 schemes:
+  NabcamStorageTests:
+    build:
+      targets:
+        NabcamStorageTests: [test]
+    test:
+      targets:
+        - NabcamStorageTests
   NabcamIOS:
     build:
       targets:

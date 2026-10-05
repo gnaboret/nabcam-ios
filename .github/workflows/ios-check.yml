@@ -24,6 +24,14 @@ jobs:
           -sdk iphonesimulator -destination 'generic/platform=iOS Simulator'
           -derivedDataPath build/simulator -configuration Debug
           ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
+      - name: Exercise Keychain on iOS simulator
+        working-directory: ios
+        run: |
+          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for runtime,devices in d["devices"].items() if "iOS" in runtime for x in devices if x["name"].startswith("iPhone")))')
+          xcodebuild test -project NabcamIOS.xcodeproj -scheme NabcamStorageTests \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build/storage-tests -resultBundlePath build/storage-results.xcresult \
+            -parallel-testing-enabled NO ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
       - name: Compile for iPhone
         working-directory: ios
         run: >-
@@ -53,3 +61,9 @@ jobs:
         with:
           name: nabcam-ios-simulator-not-for-iphone-install
           path: ios/build/simulator/Build/Products/Debug-iphonesimulator/NabcamIOS.app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: keychain-simulator-test-results
+          path: ios/build/storage-results.xcresult
+          if-no-files-found: ignore

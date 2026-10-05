@@ -8,12 +8,16 @@ final class ConnectionProfiles: ObservableObject {
     @Published private(set) var profiles: [ConnectionProfile] = []
     @Published private(set) var canWrite = false
     @Published var errorMessage: String?
-    private let query: [String: Any] = [
-        kSecClass as String: kSecClassGenericPassword,
-        kSecAttrService as String: "com.gnabcamirl.app.connections",
-        kSecAttrAccount as String: "profiles-v1",
-        kSecAttrSynchronizable as String: false
-    ]
+    private let query: [String: Any]
+
+    init(service: String = "com.gnabcamirl.app.connections") {
+        query = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "profiles-v1",
+            kSecAttrSynchronizable as String: false
+        ]
+    }
 
     func load() {
         var lookup = query
