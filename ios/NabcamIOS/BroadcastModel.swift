@@ -689,13 +689,14 @@ final class BroadcastModel: ObservableObject {
         }
     }
 
-    func configureWatermark(id: UUID, corner: ClockCorner? = nil, percent: Int? = nil, remove: Bool = false) async {
+    func configureWatermark(id: UUID, corner: ClockCorner? = nil, percent: Int? = nil, dvd: Bool? = nil, remove: Bool = false) async {
         var proposed = watermarks
         guard let index = proposed.firstIndex(where: { $0.id == id }) else { return }
         if remove { proposed.remove(at: index) }
         else {
             if let corner { proposed[index].corner = corner }
             if let percent { proposed[index].percent = percent }
+            if let dvd { proposed[index].dvd = dvd }
         }
         await replaceWatermarks(proposed)
     }

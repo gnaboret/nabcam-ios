@@ -238,11 +238,14 @@ struct BroadcastView: View {
                     Section("Stream overlays") {
                         ForEach(Array(model.watermarks.enumerated()), id: \.element.id) { index, watermark in
                             LabeledContent("Watermark \(index + 1)", value: "PNG / JPEG")
+                            Toggle("DVD bounce", isOn: Binding(get: { watermark.dvd == true }, set: { enabled in
+                                Task { await model.configureWatermark(id: watermark.id, dvd: enabled) }
+                            })).disabled(model.isLive || model.isBusy)
                             Picker("Position", selection: Binding(get: { watermark.corner }, set: { corner in
                                 Task { await model.configureWatermark(id: watermark.id, corner: corner) }
                             })) {
                                 ForEach(ClockCorner.allCases) { Text($0.rawValue).tag($0) }
-                            }.disabled(model.isLive || model.isBusy)
+                            }.disabled(model.isLive || model.isBusy || watermark.dvd == true)
                             Picker("Width", selection: Binding(get: { watermark.percent }, set: { percent in
                                 Task { await model.configureWatermark(id: watermark.id, percent: percent) }
                             })) {

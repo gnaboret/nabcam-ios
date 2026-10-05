@@ -12,8 +12,11 @@ public struct SavedWatermark: Codable, Identifiable, Equatable, Sendable {
     public let data: Data
     public var corner: OverlayCorner
     public var percent: Int
-    public init(id: UUID = UUID(), data: Data, corner: OverlayCorner = .bottomRight, percent: Int = 20) {
+    // Optional to preserve archives written before animated watermarks existed.
+    public var dvd: Bool?
+    public init(id: UUID = UUID(), data: Data, corner: OverlayCorner = .bottomRight, percent: Int = 20, dvd: Bool? = nil) {
         self.id = id; self.data = data; self.corner = corner; self.percent = percent
+        self.dvd = dvd
     }
 }
 

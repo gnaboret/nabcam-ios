@@ -26,7 +26,9 @@ enum WatermarkError: Error { case invalid }
 @ScreenActor
 final class StreamWatermarks {
     private var objects: [ImageScreenObject] = []
+    private var animated: [ImageScreenObject] = []
     private weak var screen: Screen?
+    private var motionTask: Task<Void, Never>?
 
     init(configurations: [WatermarkConfiguration], width: Int, height: Int) throws {
         guard configurations.count <= 3 else { throw WatermarkError.invalid }
@@ -56,6 +58,11 @@ final class StreamWatermarks {
             object.horizontalAlignment = [.topLeft, .bottomLeft].contains(config.corner) ? .left : .right
             object.verticalAlignment = [.topLeft, .topRight].contains(config.corner) ? .top : .bottom
             objects.append(object)
+            if config.dvd == true {
+                object.horizontalAlignment = .left
+                object.verticalAlignment = .top
+                animated.append(object)
+            }
         }
     }
 
@@ -65,10 +72,34 @@ final class StreamWatermarks {
         screen.size = .init(width: width, height: height)
         do {
             for object in objects { try screen.addChild(object) }
+            if !animated.isEmpty {
+                motionTask = Task { [weak self] in
+                    let began = DispatchTime.now().uptimeNanoseconds
+                    while !Task.isCancelled {
+                        guard self?.screen != nil else { return }
+                        let elapsed = Double(DispatchTime.now().uptimeNanoseconds - began) / 1_000_000_000
+                        self?.updateMotion(width: width, height: height, elapsedSeconds: elapsed)
+                        do { try await Task.sleep(for: .milliseconds(33)) }
+                        catch { return }
+                    }
+                }
+            }
         } catch { remove(); throw error }
     }
 
+    private func updateMotion(width: Int, height: Int, elapsedSeconds: Double) {
+        for object in animated {
+            let point = DVDBounce(width: Double(width), height: Double(height),
+                                  objectWidth: Double(object.size.width), objectHeight: Double(object.size.height),
+                                  elapsedSeconds: elapsedSeconds)
+            object.layoutMargin = .init(top: CGFloat(point.y), left: CGFloat(point.x), bottom: 0, right: 0)
+            object.invalidateLayout()
+        }
+    }
+
     func remove() {
+        motionTask?.cancel()
+        motionTask = nil
         for object in objects { screen?.removeChild(object) }
         screen = nil
     }
