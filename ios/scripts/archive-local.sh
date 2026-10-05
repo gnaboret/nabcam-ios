@@ -24,6 +24,7 @@ python3 scripts/local_signing.py "$release_dir/ExportOptions.plist" "$release_di
 profile_uuid=$(sed -n '1p' "$release_dir/signing-identifiers.txt")
 certificate=$(sed -n '2p' "$release_dir/signing-identifiers.txt")
 xcodegen generate
+swift test --package-path Core
 xcodebuild archive -project NabcamIOS.xcodeproj -scheme NabcamIOS \
   -configuration Release -destination 'generic/platform=iOS' \
   -archivePath "$release_dir/GnabCam.xcarchive" \
@@ -32,6 +33,10 @@ xcodebuild archive -project NabcamIOS.xcodeproj -scheme NabcamIOS \
   CURRENT_PROJECT_VERSION="$GNAB_BUILD_NUMBER"
 app="$release_dir/GnabCam.xcarchive/Products/Applications/NabcamIOS.app"
 [[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")" == com.gnabcamirl.app ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleDisplayName' "$app/Info.plist")" == 'GNAB CAM IRL' ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Info.plist")" == "$GNAB_BUILD_NUMBER" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print DTPlatformName' "$app/Info.plist")" == iphoneos ]]
+[[ -s "$app/PrivacyInfo.xcprivacy" && -s "$app/ThirdPartyNotices.txt" ]]
 codesign --verify --deep --strict "$app"
 xcodebuild -exportArchive -archivePath "$release_dir/GnabCam.xcarchive" \
   -exportPath "$release_dir/export" -exportOptionsPlist "$release_dir/ExportOptions.plist"
