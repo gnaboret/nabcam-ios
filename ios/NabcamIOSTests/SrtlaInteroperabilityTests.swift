@@ -14,28 +14,64 @@ final class SrtlaInteroperabilityTests: XCTestCase {
     // HaishinKit owns libsrt startup/cleanup. Keep one client for this suite:
     // receiver fixtures own sockets only, never the process-global SRT runtime.
     // Reusing the client also exercises close -> reconnect -> publish lifecycle.
-    private static let connection = SRTConnection()
-    private static let stream = SRTStream(connection: connection)
+    private static let session = SrtPublishSession()
 
     func testHaishinKitPublishesEncryptedAudioThroughTwoPathRelay() async throws {
-        try await exerciseEncryptedStream(blackholeOnePath: false)
+        try await exerciseStream(blackholeOnePath: false)
     }
 
     func testEncryptedStreamContinuesWhenOneRegisteredPathStopsReplying() async throws {
-        try await exerciseEncryptedStream(blackholeOnePath: true)
+        try await exerciseStream(blackholeOnePath: true)
     }
 
     func testEscapedStreamIDAndPassphraseReachReceiverUnchanged() async throws {
-        try await exerciseEncryptedStream(blackholeOnePath: false, escapedCredentials: true)
+        try await exerciseStream(blackholeOnePath: false, escapedCredentials: true)
     }
 
-    private func exerciseEncryptedStream(blackholeOnePath: Bool, escapedCredentials: Bool = false) async throws {
+    func testUnencryptedDestinationClearsPreviouslyConfiguredCredentials() async throws {
+        // Exercise the exact pre-connect cancellation case: options were applied,
+        // but no successful connect occurred, so connection.close() is a no-op.
+        let old = try SrtConnectionOptions(XCTUnwrap(URL(string:
+            "srt://127.0.0.1:9000?streamid=stale-fixture&passphrase=stale-test-secret")))
+        try await old.apply(to: Self.session.connection)
+        try await exerciseStream(blackholeOnePath: false, encrypted: false)
+    }
+
+    func testStopDuringNativeConnectionDoesNotPublishLater() async throws {
+        let listening = expectation(description: "Non-SRT UDP listener ready")
+        let unexpectedDisconnect = expectation(description: "Explicit Stop must not report a remote disconnect")
+        unexpectedDisconnect.isInverted = true
+        let parameters = NWParameters.udp
+        parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
+        let listener = try NWListener(using: parameters)
+        defer { listener.cancel() }
+        listener.stateUpdateHandler = { if case .ready = $0 { listening.fulfill() } }
+        listener.newConnectionHandler = { $0.cancel() } // No SRT handshake response.
+        listener.start(queue: DispatchQueue(label: "com.gnabcamirl.tests.silent-udp"))
+        await fulfillment(of: [listening], timeout: 5)
+        let port = try XCTUnwrap(listener.port?.rawValue)
+        let url = try XCTUnwrap(URL(string: "srt://127.0.0.1:\(port)?conntimeo=1000&passphrase=cancel-fixture-secret"))
+        let session = Self.session
+        try await session.configure(url, expectedMedias: [.audio])
+        let pending = Task { try await session.connect { unexpectedDisconnect.fulfill() } }
+        try await Task.sleep(for: .milliseconds(30))
+        pending.cancel()
+        await session.close()
+        do { try await pending.value; XCTFail("Cancelled connection must not become live") }
+        catch is CancellationError {} catch { XCTFail("Expected cancellation") }
+        let connected = await session.connected
+        XCTAssertFalse(connected)
+        try await session.configure(url, expectedMedias: [.audio])
+        await fulfillment(of: [unexpectedDisconnect], timeout: 0.2)
+    }
+
+    private func exerciseStream(blackholeOnePath: Bool, escapedCredentials: Bool = false, encrypted: Bool = true) async throws {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
-        let connection = Self.connection
-        let stream = Self.stream
-        let streamID = escapedCredentials ? "#!::r=nabcam/interop,token=a+b&c?%" : "nabcam-interop"
-        let passphrase = escapedCredentials ? "nabcam+local&test#?%" : "nabcam-local-test"
+        let session = Self.session
+        let stream = session.mediaStream
+        let streamID = encrypted ? (escapedCredentials ? "#!::r=nabcam/interop,token=a+b&c?%" : "nabcam-interop") : ""
+        let passphrase: String? = encrypted ? (escapedCredentials ? "nabcam+local&test#?%" : "nabcam-local-test") : nil
         let server = try NativeSRTReceiver(passphrase: passphrase)
         defer { server.close() }
         server.start()
@@ -48,8 +84,11 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         var address = URLComponents()
         address.scheme = "srtla"; address.host = "127.0.0.1"; address.port = Int(receiverPort)
         address.queryItems = [URLQueryItem(name: "mode", value: "caller"), URLQueryItem(name: "latency", value: "120"),
-                              URLQueryItem(name: "conntimeo", value: "5000"), URLQueryItem(name: "streamid", value: streamID),
-                              URLQueryItem(name: "passphrase", value: passphrase), URLQueryItem(name: "pbkeylen", value: "16")]
+                              URLQueryItem(name: "conntimeo", value: "5000")]
+        if let passphrase {
+            address.queryItems?.append(contentsOf: [URLQueryItem(name: "streamid", value: streamID),
+                URLQueryItem(name: "passphrase", value: passphrase), URLQueryItem(name: "pbkeylen", value: "16")])
+        }
         let endpoint = try SrtlaEndpoint(XCTUnwrap(address.url).absoluteString)
         let relay = try SrtlaControlSession(endpoint: endpoint, interfaces: [.automatic, .automatic], pacingKbps: 1200)
         defer { relay.close() }
@@ -61,14 +100,11 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         }
         XCTAssertEqual(relay.snapshot().filter { $0.state == .registered }.count, 2)
         do {
-            let options = try SrtConnectionOptions(url)
-            try await options.apply(to: connection)
-            try await connection.connect(options.url)
-            let connected = await connection.connected
-            XCTAssertTrue(connected)
-            await stream.setExpectedMedias([.audio])
+            try await session.configure(url, expectedMedias: [.audio])
             try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000, sampleRate: 48_000))
-            await stream.publish()
+            try await session.connect({})
+            let connected = await session.connected
+            XCTAssertTrue(connected)
             let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
             var packetsBeforeLinkLoss = 0
             for frame in 0..<90 {
@@ -100,11 +136,9 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             XCTAssertEqual(proxy.failureCount, 0)
             XCTAssertEqual(proxy.mediaPathCount, 2)
             XCTAssertEqual(relay.relaySnapshot().overflowPackets, 0)
-            await stream.close()
-            await connection.close()
+            await session.close()
         } catch {
-            await stream.close()
-            await connection.close()
+            await session.close()
             throw error
         }
     }
@@ -123,16 +157,20 @@ private final class NativeSRTReceiver: @unchecked Sendable {
     private var timer: DispatchSourceTimer?
     private var stopped = false
 
-    init(passphrase: String) throws {
+    init(passphrase: String?) throws {
         let socket = srt_create_socket()
         var complete = false
         defer { if !complete, socket != SRT_INVALID_SOCK { srt_close(socket) } }
         guard socket != SRT_INVALID_SOCK else { throw Failure.setup }
         var synchronous = false
         guard srt_setsockflag(socket, SRTO_RCVSYN, &synchronous, Int32(MemoryLayout<Bool>.size)) == 0 else { throw Failure.setup }
-        let passwordBytes = Array(passphrase.utf8)
-        let configured = passwordBytes.withUnsafeBytes { srt_setsockflag(socket, SRTO_PASSPHRASE, $0.baseAddress, Int32($0.count)) }
-        guard configured == 0 else { throw Failure.setup }
+        var enforceEncryption = true
+        guard srt_setsockflag(socket, SRTO_ENFORCEDENCRYPTION, &enforceEncryption, Int32(MemoryLayout<Bool>.size)) == 0 else { throw Failure.setup }
+        if let passphrase {
+            let passwordBytes = Array(passphrase.utf8)
+            let configured = passwordBytes.withUnsafeBytes { srt_setsockflag(socket, SRTO_PASSPHRASE, $0.baseAddress, Int32($0.count)) }
+            guard configured == 0 else { throw Failure.setup }
+        }
         var address = sockaddr_in()
         address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         address.sin_family = sa_family_t(AF_INET)
