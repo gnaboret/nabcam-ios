@@ -1,7 +1,7 @@
 import Foundation
 
-/// Receiver addressing for the upcoming local SRT-to-SRTLA relay. Parsing this
-/// type does not enable SRTLA in StreamDestination or the broadcast UI.
+/// Receiver addressing for the local SRT-to-SRTLA relay. Publishing requires the
+/// broadcaster's explicit experimental opt-in; parsing alone never opens sockets.
 public struct SrtlaEndpoint: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     public enum ValidationError: Error, LocalizedError {
         case invalidReceiver, callerRequired, invalidLocalPort

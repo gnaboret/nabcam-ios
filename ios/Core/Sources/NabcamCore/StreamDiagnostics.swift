@@ -9,6 +9,7 @@ public enum StreamDiagnosticEvent: Sendable {
     case audioInterruption(began: Bool)
     case watermarks(count: Int)
     case frameRates(camera: Double, mixed: Double, cameraGapMs: Double, mixedGapMs: Double)
+    case srtla(registeredPaths: Int, queuedPackets: Int, queuedBytes: Int, oldestMediaMs: Int64, overflows: UInt64, socketReplacements: UInt64)
 
     fileprivate var description: String {
         switch self {
@@ -31,6 +32,8 @@ public enum StreamDiagnosticEvent: Sendable {
         case .watermarks(let count): "Encoded image overlays configured: \(count)"
         case .frameRates(let camera, let mixed, let cameraGap, let mixedGap):
             String(format: "Camera %.1f FPS / mixed output %.1f FPS; maximum callback gaps %.1f / %.1f ms (latest sample window)", camera, mixed, cameraGap, mixedGap)
+        case .srtla(let paths, let packets, let bytes, let age, let overflows, let replacements):
+            "Experimental SRTLA: \(paths) registered paths; queue \(packets) packets / \(bytes) bytes; oldest media \(age) ms; overflow \(overflows); socket replacements \(replacements)"
         }
     }
 }

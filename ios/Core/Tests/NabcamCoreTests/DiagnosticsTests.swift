@@ -2,6 +2,16 @@ import XCTest
 @testable import NabcamCore
 
 final class DiagnosticsTests: XCTestCase {
+    func testSrtlaQueueSnapshotContainsOnlyOperationalCounts() {
+        var log = StreamDiagnostics()
+        log.append(.srtla(registeredPaths: 2, queuedPackets: 8, queuedBytes: 10656,
+                          oldestMediaMs: 37, overflows: 1, socketReplacements: 3))
+        let report = log.report()
+        XCTAssertTrue(report.contains("Experimental SRTLA: 2 registered paths"))
+        XCTAssertTrue(report.contains("queue 8 packets / 10656 bytes; oldest media 37 ms"))
+        XCTAssertTrue(report.contains("overflow 1; socket replacements 3"))
+        XCTAssertFalse(report.contains("srtla://"))
+    }
     func testAudioInterruptionTimeline() {
         var log = StreamDiagnostics()
         log.append(.audioInterruption(began: true), at: Date(timeIntervalSince1970: 10))

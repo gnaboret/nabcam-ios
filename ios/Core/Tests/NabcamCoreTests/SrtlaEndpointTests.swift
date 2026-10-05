@@ -28,9 +28,9 @@ final class SrtlaEndpointTests: XCTestCase {
             XCTAssertThrowsError(try SrtlaEndpoint(input))
         }
     }
-    func testLocalPortMustExistAndLiveBroadcastStillRejectsSRTLA() throws {
+    func testLocalPortMustExistAndSRTLARequiresAnExplicitRelay() throws {
         let endpoint = try SrtlaEndpoint("srtla://host:9000")
         XCTAssertThrowsError(try endpoint.localSRTURL(port: 0))
-        XCTAssertThrowsError(try StreamDestination("srtla://host:9000"))
+        XCTAssertTrue(try StreamDestination("srtla://host:9000").requiresSrtlaRelay)
     }
 }

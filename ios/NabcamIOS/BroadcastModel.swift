@@ -31,6 +31,8 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var captureFPS: Double?
     @Published private(set) var mixedFPS: Double?
     @Published private(set) var audioLevel: AudioLevel?
+    @Published private(set) var experimentalSrtlaEnabled = false
+    @Published private(set) var relayPathStatus: String?
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
@@ -40,6 +42,8 @@ final class BroadcastModel: ObservableObject {
     // Keep the SRT runtime/stream alive across Start and Stop. The session resets
     // its socket and credentials between attempts, without global runtime churn.
     private lazy var srtPublishingSession = SrtPublishSession()
+    private var srtlaRelay: SrtlaControlSession?
+    private var relayStatusTask: Task<Void, Never>?
     private var connectionTask: Task<Void, Never>?
     private var lifecycleTask: Task<Void, Never>?
     private var generation = 0
@@ -131,6 +135,10 @@ final class BroadcastModel: ObservableObject {
         let validated: StreamDestination
         do { validated = try StreamDestination(destination) }
         catch { errorMessage = error.localizedDescription; return }
+        guard !validated.requiresSrtlaRelay || experimentalSrtlaEnabled else {
+            errorMessage = "Enable Experimental SRTLA in Connection settings to test this destination. iPhone failover has not been verified yet."
+            return
+        }
         guard (444...12000).contains(bitrateKbps) else {
             errorMessage = "Choose a bitrate from 444 to 12000 kbps."
             return
@@ -143,10 +151,23 @@ final class BroadcastModel: ObservableObject {
         diagnostics.append(.connecting(bitrateKbps: bitrateKbps))
         connectionTask = Task {
             var candidate: (any Session)?
+            var candidateRelay: SrtlaControlSession?
             do {
+                try Task.checkCancellation()
+                var publishingURL = validated.url
+                if validated.requiresSrtlaRelay {
+                    let relay = try SrtlaControlSession(endpoint: SrtlaEndpoint(validated.url.absoluteString),
+                        pacingKbps: SrtlaPacketPacer.rate(videoKbps: bitrateKbps, audioKbps: 96, headroomPercent: 125))
+                    candidateRelay = relay
+                    srtlaRelay = relay
+                    relay.start()
+                    startRelayStatus(relay, owner: owner)
+                    publishingURL = try await relay.waitUntilReady()
+                }
+                try Task.checkCancellation()
                 let next: any Session
-                if validated.protocolName == "SRT" {
-                    try await srtPublishingSession.configure(validated.url)
+                if validated.protocolName == "SRT" || validated.requiresSrtlaRelay {
+                    try await srtPublishingSession.configure(publishingURL)
                     next = srtPublishingSession
                 } else {
                     await SessionBuilderFactory.shared.register(RTMPSessionFactory())
@@ -157,7 +178,7 @@ final class BroadcastModel: ObservableObject {
                 }
                 candidate = next
                 try Task.checkCancellation()
-                guard owner == generation else { try? await next.close(); return }
+                guard owner == generation else { candidateRelay?.close(); try? await next.close(); return }
                 session = next
                 await next.setMaxRetryCount(0)
                 let stream = await next.stream
@@ -178,6 +199,7 @@ final class BroadcastModel: ObservableObject {
                     }
                 }
                 guard owner == generation, !Task.isCancelled else {
+                    candidateRelay?.close()
                     await mixer.removeOutput(stream)
                     try? await next.close()
                     return
@@ -189,11 +211,15 @@ final class BroadcastModel: ObservableObject {
                 status = "LIVE · \(validated.protocolName) · target \(bitrateKbps) kbps"
                 UIApplication.shared.isIdleTimerDisabled = true
             } catch {
+                candidateRelay?.close()
                 if let candidate {
                     await mixer.removeOutput(candidate.stream)
                     try? await candidate.close()
                 }
                 guard owner == generation else { return }
+                srtlaRelay = nil
+                relayStatusTask?.cancel(); relayStatusTask = nil
+                relayPathStatus = nil
                 session = nil
                 isBusy = false
                 isConnecting = false
@@ -203,8 +229,10 @@ final class BroadcastModel: ObservableObject {
                 // Never expose a stream URL/key through a transport error description.
                 if let optionError = error as? SrtConnectionOptions.ValidationError {
                     errorMessage = optionError.localizedDescription
+                } else if error is SrtlaControlSession.ConnectionWaitError {
+                    errorMessage = "The SRTLA receiver did not register an available link. Check its address, port and network access."
                 } else {
-                    errorMessage = "Could not publish. Check the destination, stream key, receiver availability and protocol. SRTLA is not supported in this first iOS build."
+                    errorMessage = "Could not publish. Check the destination, stream key, receiver availability and protocol. SRTLA requires an SRTLA receiver, not a plain SRT port."
                 }
             }
         }
@@ -220,6 +248,9 @@ final class BroadcastModel: ObservableObject {
         isLive = false
         let previous = session
         session = nil
+        relayStatusTask?.cancel(); relayStatusTask = nil
+        srtlaRelay?.close(); srtlaRelay = nil
+        relayPathStatus = nil
         if let previous {
             await mixer.removeOutput(previous.stream)
             try? await previous.close()
@@ -229,6 +260,49 @@ final class BroadcastModel: ObservableObject {
         status = "Stopped"
         diagnostics.append(.stopped)
         isBusy = false
+    }
+
+    func setExperimentalSrtla(_ enabled: Bool) {
+        guard !isLive, !isBusy else { return }
+        experimentalSrtlaEnabled = enabled
+    }
+
+    private func startRelayStatus(_ relay: SrtlaControlSession, owner: Int) {
+        relayStatusTask?.cancel()
+        relayStatusTask = Task { [weak self] in
+            var sample = 0
+            while !Task.isCancelled {
+                guard let self, self.generation == owner else { return }
+                let snapshot = relay.snapshot()
+                let paths = [SrtlaControlSession.Interface.wifi, .cellular, .automatic].flatMap { interface in
+                    snapshot.filter { $0.interface == interface }
+                }
+                let summary = paths.map { path in
+                    let name: String
+                    switch path.interface { case .wifi: name = "Wi-Fi"; case .cellular: name = "Cellular"; case .automatic: name = "Network" }
+                    let state: String
+                    switch path.state {
+                    case .connecting: state = "connecting"
+                    case .ready: state = "registering"
+                    case .waiting: state = "unavailable"
+                    case .failed: state = "retrying"
+                    case .registered: state = "ready"
+                    case .cooldown: state = "receiver cooldown"
+                    }
+                    return "\(name) \(state)"
+                }.joined(separator: " · ")
+                if self.relayPathStatus != summary || sample % 5 == 0 {
+                    let stats = relay.relaySnapshot()
+                    self.diagnostics.append(.srtla(registeredPaths: paths.filter { $0.state == .registered }.count,
+                        queuedPackets: stats.queuedPackets, queuedBytes: stats.queuedBytes,
+                        oldestMediaMs: stats.oldestMilliseconds, overflows: stats.overflowPackets,
+                        socketReplacements: stats.socketReplacements))
+                }
+                self.relayPathStatus = summary.isEmpty ? "SRTLA relay stopped" : summary
+                sample += 1
+                do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            }
+        }
     }
 
     func switchCamera() async {

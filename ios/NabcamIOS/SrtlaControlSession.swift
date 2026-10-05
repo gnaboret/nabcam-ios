@@ -3,8 +3,8 @@ import Network
 import Security
 import NabcamCore
 
-/// Receiver registration plus an optional paced loopback SRT relay. Not yet
-/// exposed by BroadcastModel: device failover and real SRT receiver tests remain.
+/// Receiver registration plus an optional paced loopback SRT relay. Exposed only
+/// through the explicit experimental option; physical-iPhone failover is unverified.
 final class SrtlaControlSession: @unchecked Sendable {
     enum Interface: Sendable {
         case wifi, cellular, automatic

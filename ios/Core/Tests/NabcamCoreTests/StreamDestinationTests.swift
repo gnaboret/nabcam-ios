@@ -11,8 +11,13 @@ final class StreamDestinationTests: XCTestCase {
         let input = "srt://example.com:9000?mode=caller&latency=2500&streamid=abc"
         XCTAssertEqual(try StreamDestination(input).url.absoluteString, input)
     }
-    func testSRTLAIsNeverTreatedAsPlainSRT() {
-        XCTAssertThrowsError(try StreamDestination("srtla://example.com:9000"))
+    func testSRTLARequiresTheRelayAndIsNeverTreatedAsPlainSRT() throws {
+        let endpoint = try StreamDestination("srtla://example.com:9000?streamid=fixture")
+        XCTAssertTrue(endpoint.requiresSrtlaRelay)
+        XCTAssertEqual(endpoint.protocolName, "SRTLA")
+        XCTAssertEqual(endpoint.url.scheme, "srtla")
+        XCTAssertFalse(try StreamDestination("srt://example.com:9000").requiresSrtlaRelay)
+        XCTAssertThrowsError(try StreamDestination("srtla://example.com:9000?mode=listener"))
     }
     func testIncompleteAndNonStreamingURLsAreRejected() {
         for input in ["", "https://example.com/live/key", "rtmp://example.com/live", "srt://example.com", "rtmp://example.com/live/a b", "srt://example.com:0"] {

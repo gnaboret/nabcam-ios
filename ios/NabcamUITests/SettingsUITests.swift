@@ -44,6 +44,30 @@ final class SettingsUITests: XCTestCase {
         let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
         XCTAssertTrue(form.waitForExistence(timeout: 10))
         attach("settings-camera", app: app)
+        let relayToggle = app.switches["experimental-srtla-toggle"]
+        for _ in 0..<24 {
+            if fullyVisible(relayToggle, in: app, form: form) { break }
+            scroll(form, toward: relayToggle)
+        }
+        XCTAssertTrue(fullyVisible(relayToggle, in: app, form: form))
+        XCTAssertEqual(relayToggle.value as? String, "0", "Experimental SRTLA must be off on a fresh launch")
+        relayToggle.tap()
+        XCTAssertEqual(relayToggle.value as? String, "1")
+        let relayNotice = app.staticTexts["srtla-experimental-notice"]
+        for _ in 0..<12 {
+            if fullyVisible(relayNotice, in: app, form: form) { break }
+            scroll(form, toward: relayNotice)
+        }
+        XCTAssertTrue(relayNotice.exists)
+        XCTAssertTrue(relayNotice.label.contains("cannot select both SIMs"))
+        XCTAssertTrue(relayNotice.label.contains("unverified"))
+        attach("settings-experimental-srtla", app: app)
+        for _ in 0..<12 {
+            if fullyVisible(relayToggle, in: app, form: form) { break }
+            scroll(form, toward: relayToggle)
+        }
+        relayToggle.tap()
+        XCTAssertEqual(relayToggle.value as? String, "0")
         let addWatermark = app.buttons["Add image watermark"]
         for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }

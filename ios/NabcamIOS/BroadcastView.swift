@@ -37,6 +37,9 @@ struct BroadcastView: View {
                             Text(String(format: "Camera %.1f · Output %.1f FPS", capture, mixed))
                                 .font(.caption.monospacedDigit()).foregroundStyle(.white)
                         }
+                        if let paths = model.relayPathStatus {
+                            Text(paths).font(.caption2).foregroundStyle(.white)
+                        }
                     }
                     .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
                     Spacer()
@@ -143,10 +146,18 @@ struct BroadcastView: View {
                         }.disabled(model.isLive || model.isBusy)
                         TextField("Connection name", text: $profileName)
                             .disabled(model.isLive || model.isBusy)
-                        SecureField("Full RTMP / RTMPS / SRT URL", text: $destination)
+                        SecureField("Full RTMP / RTMPS / SRT / SRTLA URL", text: $destination)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .disabled(model.isLive || model.isBusy)
                         Text("Include your stream key in the URL. Save stores this connection, video mode, bitrate and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
+                        Toggle("Experimental SRTLA", isOn: Binding(get: { model.experimentalSrtlaEnabled }, set: {
+                            model.setExperimentalSrtla($0)
+                        })).disabled(model.isLive || model.isBusy).accessibilityIdentifier("experimental-srtla-toggle")
+                        if model.experimentalSrtlaEnabled {
+                            Text("Use srtla:// with an SRTLA receiver. Tries Wi-Fi plus iOS’s selected cellular connection; it cannot select both SIMs. Real-iPhone failover and A/V sync are unverified. Re-enable this test option after reopening the app.")
+                                .font(.caption).foregroundStyle(nabPurple)
+                                .accessibilityIdentifier("srtla-experimental-notice")
+                        }
                         Button(profileID == nil ? "Save connection" : "Save changes") { saveConnection() }
                             .disabled(model.isLive || model.isBusy || !connections.canWrite)
                         if profileID != nil {
@@ -222,14 +233,14 @@ struct BroadcastView: View {
                     }
                     Section("First iOS build") {
                         Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
-                        Text("Plain SRT is not SRTLA. Bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
+                        Text("SRTLA is opt-in and experimental. Dual-SIM bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
                         Button("Restart camera preview") { Task { await model.restartPreview() } }
                             .disabled(model.isLive || model.isBusy)
                     }
                     Section("Diagnostics") {
                         ShareLink("Share diagnostic timeline", item: model.diagnosticReport)
                         Button("Clear diagnostic timeline", role: .destructive) { model.clearDiagnostics() }
-                        Text("Last 300 events, including sampled camera/output FPS and frame gaps. No stream keys or chat contents. Receiver audio sync and network quality are not measured.")
+                        Text("Last 300 events, including camera/output FPS, frame gaps and experimental SRTLA queue status. No stream keys or chat contents. Receiver audio sync and network quality are not measured.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

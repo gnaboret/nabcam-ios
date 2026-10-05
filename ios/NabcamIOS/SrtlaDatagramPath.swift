@@ -1,8 +1,7 @@
 import Foundation
 import Network
 
-/// A single receiver-bound UDP socket. Still unused by BroadcastModel until the
-/// complete SRTLA relay, pacing and recovery integration is verified.
+/// A single receiver-bound UDP socket for the experimental SRTLA relay.
 final class SrtlaDatagramPath: @unchecked Sendable {
     enum Event: Sendable { case ready, waiting, failed, closed, datagram(Data) }
     enum SetupError: Error { case invalidEndpoint }
