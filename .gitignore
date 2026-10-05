@@ -14,4 +14,6 @@ build/
 DerivedData/
 .build/
 .swiftpm/
+__pycache__/
+*.xcodeproj/
 ios/NabcamIOS/Assets.xcassets/AppIcon.appiconset/AppIcon.png
