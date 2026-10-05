@@ -22,7 +22,15 @@ final class ProfileTests: XCTestCase {
     func testInvalidProfileRejected() {
         XCTAssertThrowsError(try ConnectionProfile(name: " ", destination: "rtmps://example.com/live/test", bitrateKbps: 1600))
         XCTAssertThrowsError(try ConnectionProfile(name: "A", destination: "rtmps://example.com/live/test", bitrateKbps: 1))
-        XCTAssertThrowsError(try ConnectionProfile(name: "A", destination: "srtla://example.com:9000", bitrateKbps: 1600))
+        XCTAssertThrowsError(try ConnectionProfile(name: "A", destination: "srtla://example.com:9000?mode=listener", bitrateKbps: 1600))
+    }
+    func testSrtlaProfileRoundTripPreservesRelayAndEscapedCredentials() throws {
+        let destination = "srtla://example.com:9000?streamid=a%2Bb%26c&passphrase=example%2Btest%26only&latency=2500"
+        let profile = try ConnectionProfile(name: "Relay", destination: destination, bitrateKbps: 1600)
+        let restored = try XCTUnwrap(ProfileArchive.decode(ProfileArchive.encode([profile])).first)
+        XCTAssertEqual(restored, profile)
+        XCTAssertEqual(restored.destination, destination)
+        XCTAssertTrue(try StreamDestination(restored.destination).requiresSrtlaRelay)
     }
     func testCorruptUnknownAndOversizedArchiveRejected() {
         for data in [Data("nope".utf8), Data(#"{"version":2,"profiles":[]}"#.utf8), Data(repeating: 0, count: 256 * 1024 + 1)] {

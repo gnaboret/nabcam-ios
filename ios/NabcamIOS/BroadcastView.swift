@@ -154,7 +154,7 @@ struct BroadcastView: View {
                             model.setExperimentalSrtla($0)
                         })).disabled(model.isLive || model.isBusy).accessibilityIdentifier("experimental-srtla-toggle")
                         if model.experimentalSrtlaEnabled {
-                            Text("Use srtla:// with an SRTLA receiver. Tries Wi-Fi plus iOS’s selected cellular connection; it cannot select both SIMs. Real-iPhone failover and A/V sync are unverified. Re-enable this test option after reopening the app.")
+                            Text("Use srtla:// with an SRTLA receiver. Tries Wi-Fi plus iOS’s selected cellular connection; it cannot select both SIMs. Real-iPhone failover and A/V sync are unverified. This test option resets when the app restarts.")
                                 .font(.caption).foregroundStyle(nabPurple)
                                 .accessibilityIdentifier("srtla-experimental-notice")
                         }
