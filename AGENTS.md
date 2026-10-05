@@ -1,4 +1,6 @@
-# NABCAM IRL iOS working agreement
+# GNAB CAM IRL iOS working agreement
+
+- User-facing app name is GNAB CAM IRL. Existing repository, module and bundle identifiers remain unchanged.
 
 - Canonical iOS checkout: `C:\Users\jester\Documents\ChatGPT\nabcam-ios`.
 - Android lives separately in `C:\Users\jester\Documents\ChatGPT\gnab-gcam`; do not change Android as part of iOS work.

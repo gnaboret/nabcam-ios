@@ -27,7 +27,7 @@ struct BroadcastView: View {
             VStack {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("NABCAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
+                        Text("GNAB CAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
                         Text(model.status).font(.caption).foregroundStyle(model.isLive ? nabGreen : .white)
                     }
                     .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
@@ -139,7 +139,7 @@ struct BroadcastView: View {
         .confirmationDialog("Start broadcasting camera and microphone?", isPresented: $confirmLive, titleVisibility: .visible) {
             Button("Go live") { model.start(destination: destination, bitrateKbps: bitrate) }
         }
-        .alert("NABCAM IRL", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
+        .alert("GNAB CAM IRL", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
     }

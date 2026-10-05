@@ -20,11 +20,11 @@ targets:
     info:
       path: build/Info.plist
       properties:
-        CFBundleDisplayName: NABCAM IRL
+        CFBundleDisplayName: GNAB CAM IRL
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
-        NSCameraUsageDescription: NABCAM IRL uses your camera for the preview and live broadcasts you start.
-        NSMicrophoneUsageDescription: NABCAM IRL uses your microphone for live broadcasts you start.
+        NSCameraUsageDescription: GNAB CAM IRL uses your camera for the preview and live broadcasts you start.
+        NSMicrophoneUsageDescription: GNAB CAM IRL uses your microphone for live broadcasts you start.
         NSLocalNetworkUsageDescription: Connect to a streaming receiver on your local network when you choose its address.
         UILaunchScreen: {}
         UIRequiresFullScreen: true
