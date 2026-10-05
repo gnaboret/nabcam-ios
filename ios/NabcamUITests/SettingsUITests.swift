@@ -51,8 +51,8 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertTrue(fullyVisible(relayToggle, in: app, form: form))
         XCTAssertEqual(relayToggle.value as? String, "0", "Experimental SRTLA must be off on a fresh launch")
-        relayToggle.tap()
-        XCTAssertEqual(relayToggle.value as? String, "1")
+        attach("settings-srtla-before-toggle", app: app)
+        setSwitch(relayToggle, to: "1", app: app)
         let relayNotice = app.staticTexts["srtla-experimental-notice"]
         for _ in 0..<12 {
             if fullyVisible(relayNotice, in: app, form: form) { break }
@@ -66,8 +66,7 @@ final class SettingsUITests: XCTestCase {
             if fullyVisible(relayToggle, in: app, form: form) { break }
             scroll(form, toward: relayToggle)
         }
-        relayToggle.tap()
-        XCTAssertEqual(relayToggle.value as? String, "0")
+        setSwitch(relayToggle, to: "0", app: app)
         let addWatermark = app.buttons["Add image watermark"]
         for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }
@@ -101,6 +100,20 @@ final class SettingsUITests: XCTestCase {
         hierarchy.name = name + "-accessibility"
         hierarchy.lifetime = .keepAlways
         add(hierarchy)
+    }
+
+    private func setSwitch(_ row: XCUIElement, to value: String, app: XCUIApplication) {
+        XCTAssertTrue(row.isEnabled)
+        // SwiftUI exposes both a full-width labelled switch row and the actual
+        // trailing UISwitch. Tapping the row's centre may hit only its label.
+        let control = row.switches.firstMatch
+        if control.exists { control.tap() }
+        else { row.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap() }
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: row)
+        let result = XCTWaiter.wait(for: [changed], timeout: 5)
+        attach("settings-srtla-after-toggle-\(value)", app: app)
+        XCTAssertEqual(result, .completed)
+        XCTAssertEqual(row.value as? String, value)
     }
 
     private func fullyVisible(_ element: XCUIElement, in app: XCUIApplication, form: XCUIElement) -> Bool {
