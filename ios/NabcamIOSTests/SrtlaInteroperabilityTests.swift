@@ -11,6 +11,12 @@ import XCTest
 
 @MainActor
 final class SrtlaInteroperabilityTests: XCTestCase {
+    // HaishinKit owns libsrt startup/cleanup. Keep one client for this suite:
+    // receiver fixtures own sockets only, never the process-global SRT runtime.
+    // Reusing the client also exercises close -> reconnect -> publish lifecycle.
+    private static let connection = SRTConnection()
+    private static let stream = SRTStream(connection: connection)
+
     func testHaishinKitPublishesEncryptedAudioThroughTwoPathRelay() async throws {
         try await exerciseEncryptedStream(blackholeOnePath: false)
     }
@@ -22,6 +28,8 @@ final class SrtlaInteroperabilityTests: XCTestCase {
     private func exerciseEncryptedStream(blackholeOnePath: Bool) async throws {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
+        let connection = Self.connection
+        let stream = Self.stream
         let server = try NativeSRTReceiver()
         defer { server.close() }
         server.start()
@@ -41,8 +49,6 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertEqual(relay.snapshot().filter { $0.state == .registered }.count, 2)
-        let connection = SRTConnection()
-        let stream = SRTStream(connection: connection)
         do {
             try await connection.connect(url)
             let connected = await connection.connected
@@ -105,10 +111,9 @@ private final class NativeSRTReceiver: @unchecked Sendable {
     private var stopped = false
 
     init() throws {
-        guard srt_startup() == 0 else { throw Failure.setup }
         let socket = srt_create_socket()
         var complete = false
-        defer { if !complete { if socket != SRT_INVALID_SOCK { srt_close(socket) }; srt_cleanup() } }
+        defer { if !complete, socket != SRT_INVALID_SOCK { srt_close(socket) } }
         guard socket != SRT_INVALID_SOCK else { throw Failure.setup }
         var synchronous = false
         guard srt_setsockflag(socket, SRTO_RCVSYN, &synchronous, Int32(MemoryLayout<Bool>.size)) == 0 else { throw Failure.setup }
@@ -185,7 +190,7 @@ private final class NativeSRTReceiver: @unchecked Sendable {
             } else { stats.invalidMessages += 1 }
         }
     }
-    deinit { close(); srt_cleanup() }
+    deinit { close() }
 }
 
 /// Test-only SRTLA receiver: two registered UDP flows merge into one real SRT
