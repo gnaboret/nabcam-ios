@@ -43,7 +43,8 @@ public struct DatagramRateMeter: Sendable {
     }
 
     public func snapshot(at time: Int64) -> Snapshot {
-        let windows: [Window] = [50, 100, 250, 1000].map { duration in
+        let durations: [Int64] = [50, 100, 250, 1000]
+        let windows: [Window] = durations.map { duration in
             var sum = Bucket()
             for bucket in buckets where bucket.time >= 0 && bucket.time <= time && time - bucket.time < duration {
                 sum.bytes = Self.saturatingAdd(sum.bytes, bucket.bytes)
