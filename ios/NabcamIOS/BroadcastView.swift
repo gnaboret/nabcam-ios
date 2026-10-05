@@ -183,8 +183,13 @@ struct BroadcastView: View {
                         }
                         Button("Add image watermark") { importWatermark = true }
                             .disabled(model.isLive || model.isBusy || model.watermarks.count >= 3)
-                        Text("Up to 3 PNG/JPEG images, 4 MB each. Images are kept for this app session only. Transparent PNGs keep their transparency; tall images are limited to 40% of video height.")
+                        Text("Up to 3 PNG/JPEG images, 4 MB each, saved on this phone without cloud backup. Transparent PNGs keep their transparency; tall images are limited to 40% of video height.")
                             .font(.caption).foregroundStyle(.secondary)
+                        if let message = model.overlayStorageMessage {
+                            Text(message).font(.caption).foregroundStyle(.red)
+                            Button("Retry loading saved overlays") { Task { await model.retrySavedOverlays() } }
+                                .disabled(model.isLive || model.isBusy)
+                        }
                         Toggle("Clock in video", isOn: Binding(get: { model.clockEnabled }, set: { value in
                             Task { await model.configureClock(enabled: value, corner: model.clockCorner) }
                         })).disabled(model.isLive || model.isBusy)

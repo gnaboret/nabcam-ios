@@ -56,6 +56,7 @@ targets:
       - path: NabcamIOS/ConnectionProfiles.swift
       - path: NabcamIOS/StreamWatermarks.swift
       - path: NabcamIOS/OverlayCorner.swift
+      - path: NabcamIOS/OverlayPreferencesStore.swift
     dependencies:
       - package: NabcamCore
       - package: HaishinKit

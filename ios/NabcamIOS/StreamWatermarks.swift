@@ -4,12 +4,9 @@ import ImageIO
 import NabcamCore
 import CoreGraphics
 
-struct WatermarkConfiguration: Identifiable, Sendable {
-    let id = UUID()
-    let data: Data
-    var corner: ClockCorner = .bottomRight
-    var percent = 20
-    static let maximumBytes = 4 * 1024 * 1024
+typealias WatermarkConfiguration = SavedWatermark
+
+extension SavedWatermark {
 
     /// Read only the selected file, with a hard byte bound even if metadata lies.
     static func read(_ url: URL) throws -> Data {

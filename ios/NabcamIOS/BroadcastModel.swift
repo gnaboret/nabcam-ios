@@ -27,6 +27,7 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var clockEnabled = false
     @Published private(set) var clockCorner: ClockCorner = .topRight
     @Published private(set) var watermarks: [WatermarkConfiguration] = []
+    @Published private(set) var overlayStorageMessage: String?
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
@@ -41,11 +42,15 @@ final class BroadcastModel: ObservableObject {
     private var streamClock: StreamClock?
     private var clockTask: Task<Void, Never>?
     private var streamWatermarks: StreamWatermarks?
+    private let overlayStore = OverlayPreferencesStore()
+    private var overlayPreferencesLoaded = false
 
     private func prepare() async {
         guard active, !audioInterrupted, !isReady, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
+        await loadOverlayPreferencesIfNeeded()
+        guard active, !audioInterrupted else { return }
         diagnostics.append(.captureRequested(videoPreset))
         let camera = await AVCaptureDevice.requestAccess(for: .video)
         let microphone = await AVCaptureDevice.requestAccess(for: .audio)
@@ -397,6 +402,12 @@ final class BroadcastModel: ObservableObject {
 
     func configureClock(enabled: Bool, corner: ClockCorner) async {
         guard active, !isLive, !isBusy else { return }
+        let owner = generation
+        isBusy = true
+        let saved = await saveOverlayPreferences(OverlayPreferences(watermarks: watermarks, clockEnabled: enabled, clockCorner: corner))
+        guard owner == generation, active else { return }
+        isBusy = false
+        guard saved else { return }
         clockEnabled = enabled
         diagnostics.append(.clockEnabled(enabled))
         clockCorner = corner
@@ -456,6 +467,9 @@ final class BroadcastModel: ObservableObject {
             _ = try await StreamWatermarks(configurations: proposed,
                 width: videoPreset.width, height: videoPreset.height)
             guard owner == generation, active else { return }
+            let saved = await saveOverlayPreferences(OverlayPreferences(watermarks: proposed, clockEnabled: clockEnabled, clockCorner: clockCorner))
+            guard owner == generation, active else { return }
+            guard saved else { isBusy = false; return }
             watermarks = proposed
             diagnostics.append(.watermarks(count: proposed.count))
             isBusy = false
@@ -479,6 +493,40 @@ final class BroadcastModel: ObservableObject {
                 catch { break }
             }
         }
+    }
+
+    private func loadOverlayPreferencesIfNeeded() async {
+        guard !overlayPreferencesLoaded else { return }
+        overlayPreferencesLoaded = true
+        do {
+            let saved = try await overlayStore.load()
+            _ = try await StreamWatermarks(configurations: saved.watermarks,
+                width: videoPreset.width, height: videoPreset.height)
+            watermarks = saved.watermarks
+            clockEnabled = saved.clockEnabled
+            clockCorner = saved.clockCorner
+            overlayStorageMessage = nil
+        } catch {
+            await overlayStore.lockWrites()
+            overlayStorageMessage = "Saved overlays could not be read. They have not been overwritten. Unlock the phone and retry."
+        }
+    }
+
+    private func saveOverlayPreferences(_ preferences: OverlayPreferences) async -> Bool {
+        do {
+            try await overlayStore.save(preferences)
+            overlayStorageMessage = nil
+            return true
+        } catch {
+            overlayStorageMessage = "Could not save this overlay change. Existing settings were kept. Unlock the phone, check free space, and retry loading."
+            return false
+        }
+    }
+
+    func retrySavedOverlays() async {
+        guard active, !isLive, !isBusy else { return }
+        overlayPreferencesLoaded = false
+        await restartPreview()
     }
 
     private func releaseCapture() async {
