@@ -31,7 +31,7 @@ jobs:
           xcodebuild test -project NabcamIOS.xcodeproj -scheme NabcamStorageTests \
             -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
             -derivedDataPath build/storage-tests -resultBundlePath build/storage-results.xcresult \
-            -parallel-testing-enabled NO ARCHS=arm64 CODE_SIGNING_ALLOWED=NO
+            -parallel-testing-enabled NO ARCHS=arm64 CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-
       - name: Compile for iPhone
         working-directory: ios
         run: >-

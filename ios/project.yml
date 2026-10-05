@@ -45,18 +45,35 @@ targets:
         CURRENT_PROJECT_VERSION: 1
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: false
-  NabcamStorageTests:
-    type: bundle.unit-test
+  NabcamStorageHost:
+    type: application
     platform: iOS
     sources:
-      - path: NabcamIOSTests
+      - path: NabcamStorageHost
+        excludes: [Simulator.entitlements]
       - path: NabcamIOS/ConnectionProfiles.swift
     dependencies:
       - package: NabcamCore
     settings:
       base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-host
+        GENERATE_INFOPLIST_FILE: true
+        CODE_SIGN_ENTITLEMENTS: NabcamStorageHost/Simulator.entitlements
+        SUPPORTED_PLATFORMS: iphonesimulator
+  NabcamStorageTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: NabcamIOSTests
+    dependencies:
+      - package: NabcamCore
+      - target: NabcamStorageHost
+    settings:
+      base:
         PRODUCT_BUNDLE_IDENTIFIER: com.gnabcamirl.storage-tests
         GENERATE_INFOPLIST_FILE: true
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/NabcamStorageHost.app/NabcamStorageHost
+        BUNDLE_LOADER: $(TEST_HOST)
 schemes:
   NabcamStorageTests:
     build:

@@ -1,6 +1,7 @@
 import XCTest
 import Security
 import NabcamCore
+@testable import NabcamStorageHost
 
 final class ConnectionProfilesTests: XCTestCase {
     private func query(_ service: String) -> [String: Any] {
