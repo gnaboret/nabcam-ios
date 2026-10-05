@@ -355,10 +355,10 @@ final class BroadcastModel: ObservableObject {
     func toggleMute() async {
         guard isReady, !isBusy else { return }
         var settings = await mixer.audioMixerSettings
-        var track = settings.tracks[0] ?? .init()
         isMuted.toggle()
-        track.isMuted = isMuted
-        settings.tracks[0] = track
+        // Single-track input format changes rebuild HaishinKit's track with
+        // default track settings. Final-output mute survives those rebuilds.
+        settings.isMuted = isMuted
         await mixer.setAudioMixerSettings(settings)
         diagnostics.append(.microphoneMuted(isMuted))
     }
