@@ -12,6 +12,14 @@ import XCTest
 @MainActor
 final class SrtlaInteroperabilityTests: XCTestCase {
     func testHaishinKitPublishesEncryptedAudioThroughTwoPathRelay() async throws {
+        try await exerciseEncryptedStream(blackholeOnePath: false)
+    }
+
+    func testEncryptedStreamContinuesWhenOneRegisteredPathStopsReplying() async throws {
+        try await exerciseEncryptedStream(blackholeOnePath: true)
+    }
+
+    private func exerciseEncryptedStream(blackholeOnePath: Bool) async throws {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
         let server = try NativeSRTReceiver()
@@ -43,7 +51,13 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             try await stream.setAudioSettings(AudioCodecSettings(bitRate: 96_000, sampleRate: 48_000))
             await stream.publish()
             let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+            var packetsBeforeLinkLoss = 0
             for frame in 0..<90 {
+                if blackholeOnePath, frame == 45 {
+                    packetsBeforeLinkLoss = server.snapshot().transportPackets
+                    XCTAssertGreaterThan(packetsBeforeLinkLoss, 0)
+                    XCTAssertTrue(proxy.blackholeOneMediaPath())
+                }
                 let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1024))
                 buffer.frameLength = 1024
                 let samples = try XCTUnwrap(buffer.floatChannelData?[0])
@@ -51,16 +65,21 @@ final class SrtlaInteroperabilityTests: XCTestCase {
                 await stream.append(buffer, when: AVAudioTime(sampleTime: Int64(frame * 1024), atRate: 48_000))
                 try await Task.sleep(for: .milliseconds(21))
             }
+            let minimumReceived = blackholeOnePath ? max(14, packetsBeforeLinkLoss + 7) : 14
             for _ in 0..<100 {
-                if server.snapshot().transportPackets >= 14 { break }
+                if server.snapshot().transportPackets >= minimumReceived { break }
                 try await Task.sleep(for: .milliseconds(50))
             }
             let received = server.snapshot()
             XCTAssertTrue(received.accepted)
             XCTAssertEqual(received.streamID, "nabcam-interop")
             XCTAssertGreaterThanOrEqual(received.transportPackets, 14)
+            if blackholeOnePath {
+                XCTAssertGreaterThanOrEqual(received.transportPackets - packetsBeforeLinkLoss, 7)
+            }
             XCTAssertEqual(received.invalidMessages, 0)
             XCTAssertEqual(proxy.failureCount, 0)
+            XCTAssertEqual(proxy.mediaPathCount, 2)
             XCTAssertEqual(relay.relaySnapshot().overflowPackets, 0)
             await stream.close()
             await connection.close()
@@ -178,12 +197,25 @@ private final class SRTLAInteropProxy: @unchecked Sendable {
     private var backend: SrtlaDatagramPath?
     private var flows: [NWConnection] = []
     private var registered: Set<ObjectIdentifier> = []
+    private var mediaPaths: Set<ObjectIdentifier> = []
+    private var blackholed: ObjectIdentifier?
     private var group: Data?
     private var stopped = false
     private var listenerStarted = false
     private var failures = 0
     var port: UInt16? { listener.port?.rawValue }
     var failureCount: Int { lock.lock(); defer { lock.unlock() }; return failures }
+    var mediaPathCount: Int { lock.lock(); defer { lock.unlock() }; return mediaPaths.count }
+
+    /// Drop traffic in BOTH directions without an immediate socket error, as a
+    /// lost uplink can do. Keep the other path and backend SRT connection intact.
+    func blackholeOneMediaPath() -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard blackholed == nil, mediaPaths.count == 2,
+              let flow = flows.first(where: { mediaPaths.contains(ObjectIdentifier($0)) }) else { return false }
+        blackholed = ObjectIdentifier(flow)
+        return true
+    }
 
     init(srtPort: UInt16, ready: @escaping @Sendable () -> Void) throws {
         let parameters = NWParameters.udp
@@ -227,7 +259,7 @@ private final class SRTLAInteropProxy: @unchecked Sendable {
     }
     private func handle(_ bytes: Data, from flow: NWConnection) {
         lock.lock()
-        guard !stopped else { lock.unlock(); return }
+        guard !stopped, blackholed != ObjectIdentifier(flow) else { lock.unlock(); return }
         var response: Data?
         var forward = false
         switch SrtlaWire.type(bytes) {
@@ -242,6 +274,7 @@ private final class SRTLAInteropProxy: @unchecked Sendable {
         default:
             forward = registered.contains(ObjectIdentifier(flow)) && SrtRelayHeader.isTransportPacket(bytes)
             if forward, let sequence = SrtlaWire.sequence(bytes) {
+                mediaPaths.insert(ObjectIdentifier(flow))
                 response = Data([0x91, 0, 0, 0, UInt8(sequence >> 24), UInt8((sequence >> 16) & 0xff),
                                  UInt8((sequence >> 8) & 0xff), UInt8(sequence & 0xff)])
             }
@@ -252,7 +285,9 @@ private final class SRTLAInteropProxy: @unchecked Sendable {
     }
     private func returnReply(_ bytes: Data) {
         lock.lock()
-        let flow = stopped ? nil : flows.first { registered.contains(ObjectIdentifier($0)) }
+        let flow = stopped ? nil : flows.first {
+            registered.contains(ObjectIdentifier($0)) && blackholed != ObjectIdentifier($0)
+        }
         lock.unlock()
         flow?.send(content: bytes, completion: .contentProcessed { _ in })
     }
