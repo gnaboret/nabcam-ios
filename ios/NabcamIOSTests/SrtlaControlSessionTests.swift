@@ -92,6 +92,47 @@ final class SrtlaControlSessionTests: XCTestCase {
         XCTAssertEqual(session.snapshot().first?.id, 2, "Old socket IDs must not be reused")
     }
 
+    func testPublishingWaitCanTimeoutAndCancelWithoutReportingAConnection() async throws {
+        let listening = expectation(description: "Receiver refuses media registration")
+        let receiver = try ControlReceiver(reject: true) { listening.fulfill() }
+        defer { receiver.close() }
+        receiver.start()
+        await fulfillment(of: [listening], timeout: 5)
+        let port = try XCTUnwrap(receiver.port)
+        let session = try SrtlaControlSession(endpoint: SrtlaEndpoint("127.0.0.1:\(port)"),
+                                              interfaces: [.automatic], pacingKbps: 1200)
+        defer { session.close() }
+        session.start()
+        do {
+            _ = try await session.waitUntilReady(timeoutMilliseconds: 100)
+            XCTFail("A local listening port alone must not indicate a registered receiver")
+        } catch SrtlaControlSession.ConnectionWaitError.timedOut {} catch { XCTFail("Unexpected wait error") }
+        let wait = Task { try await session.waitUntilReady() }
+        wait.cancel()
+        do { _ = try await wait.value; XCTFail("A cancelled publish must not continue registration") }
+        catch is CancellationError {} catch { XCTFail("Expected cancellation") }
+        session.close()
+        do { _ = try await session.waitUntilReady(); XCTFail("Closed session must not wait") }
+        catch SrtlaControlSession.ConnectionWaitError.closed {} catch { XCTFail("Expected closed state") }
+    }
+
+    func testPublishingWaitStartsWithOneRegisteredPath() async throws {
+        let listening = expectation(description: "Only the second UDP flow responds")
+        let receiver = try ControlReceiver(responsiveConnection: 1) { listening.fulfill() }
+        defer { receiver.close() }
+        receiver.start()
+        await fulfillment(of: [listening], timeout: 5)
+        let port = try XCTUnwrap(receiver.port)
+        let session = try SrtlaControlSession(endpoint: SrtlaEndpoint("127.0.0.1:\(port)?streamid=ready-test"),
+                                              interfaces: [.automatic, .automatic], pacingKbps: 1200)
+        defer { session.close() }
+        session.start()
+        let local = try await session.waitUntilReady(timeoutMilliseconds: 10_000)
+        XCTAssertEqual(local.host, "127.0.0.1")
+        XCTAssertEqual(local.query, "streamid=ready-test")
+        XCTAssertEqual(session.snapshot().filter { $0.state == .registered }.count, 1)
+    }
+
     func testPacedRelayForwardsUnchangedMediaAndOnlyMatchingSRTReplies() async throws {
         let listening = expectation(description: "Mock SRTLA receiver ready")
         let callerReady = expectation(description: "Local SRT caller ready")
@@ -169,6 +210,7 @@ private final class ControlReceiver: @unchecked Sendable {
     private let lock = NSLock()
     private let reject: Bool
     private let silentConnections: Int
+    private let responsiveConnection: Int?
     private var sockets: [NWConnection] = []
     private var group: Data?
     private var counters = Stats()
@@ -178,9 +220,11 @@ private final class ControlReceiver: @unchecked Sendable {
     var port: UInt16? { listener.port?.rawValue }
     var stats: Stats { lock.lock(); defer { lock.unlock() }; return counters }
 
-    init(reject: Bool = false, silentConnections: Int = 0, ready: @escaping @Sendable () -> Void) throws {
+    init(reject: Bool = false, silentConnections: Int = 0, responsiveConnection: Int? = nil,
+         ready: @escaping @Sendable () -> Void) throws {
         self.reject = reject
         self.silentConnections = silentConnections
+        self.responsiveConnection = responsiveConnection
         let parameters = NWParameters.udp
         parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
         listener = try NWListener(using: parameters)
@@ -215,7 +259,10 @@ private final class ControlReceiver: @unchecked Sendable {
     private func replies(to packet: Data, from socket: NWConnection) -> [Data] {
         lock.lock(); defer { lock.unlock() }
         guard !stopped else { return [] }
-        if let index = sockets.firstIndex(where: { $0 === socket }), index < silentConnections { return [] }
+        if let index = sockets.firstIndex(where: { $0 === socket }) {
+            if index < silentConnections { return [] }
+            if let responsiveConnection, index != responsiveConnection { return [] }
+        }
         switch SrtlaWire.type(packet) {
         case SrtlaWire.reg1 where packet.count == 258:
             counters.groupRequests += 1

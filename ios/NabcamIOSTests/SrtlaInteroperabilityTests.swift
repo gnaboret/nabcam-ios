@@ -35,12 +35,12 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         let relay = try SrtlaControlSession(endpoint: endpoint, interfaces: [.automatic, .automatic], pacingKbps: 1200)
         defer { relay.close() }
         relay.start()
+        let url = try await relay.waitUntilReady()
         for _ in 0..<200 {
             if relay.localSRTURL() != nil && relay.snapshot().filter({ $0.state == .registered }).count == 2 { break }
             try await Task.sleep(for: .milliseconds(50))
         }
         XCTAssertEqual(relay.snapshot().filter { $0.state == .registered }.count, 2)
-        let url = try XCTUnwrap(relay.localSRTURL())
         let connection = SRTConnection()
         let stream = SRTStream(connection: connection)
         do {

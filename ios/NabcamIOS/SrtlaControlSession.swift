@@ -33,6 +33,7 @@ final class SrtlaControlSession: @unchecked Sendable {
         let socketReplacements: UInt64
     }
     enum SetupError: Error { case invalidPathCount, invalidPacingRate, randomSourceUnavailable, identityExhausted }
+    enum ConnectionWaitError: Error { case notStarted, closed, timedOut, invalidTimeout }
     private struct Path {
         let socket: SrtlaDatagramPath
         let interface: Interface
@@ -132,6 +133,28 @@ final class SrtlaControlSession: @unchecked Sendable {
         queue.sync {
             guard !closed, let port = local?.snapshot().port else { return nil }
             return try? endpoint.localSRTURL(port: port)
+        }
+    }
+
+    /// One registered uplink is enough to begin; never wait for an unavailable
+    /// second radio. Cancellation remains responsive during receiver registration.
+    /// The returned URL contains private options and must not be logged.
+    func waitUntilReady(timeoutMilliseconds: Int = 20_000) async throws -> URL {
+        guard (1...60_000).contains(timeoutMilliseconds) else { throw ConnectionWaitError.invalidTimeout }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .milliseconds(timeoutMilliseconds))
+        while true {
+            try Task.checkCancellation()
+            let url: URL? = try queue.sync {
+                guard !closed else { throw ConnectionWaitError.closed }
+                guard started, pacingKbps != nil else { throw ConnectionWaitError.notStarted }
+                guard paths.contains(where: { $0.value.state == .ready && registration.isRegistered($0.key) }),
+                      let port = local?.snapshot().port else { return nil }
+                return try endpoint.localSRTURL(port: port)
+            }
+            if let url { return url }
+            guard clock.now < deadline else { throw ConnectionWaitError.timedOut }
+            try await clock.sleep(until: min(deadline, clock.now.advanced(by: .milliseconds(50))))
         }
     }
 
