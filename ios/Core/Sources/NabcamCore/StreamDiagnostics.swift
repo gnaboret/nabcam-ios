@@ -8,11 +8,12 @@ public enum StreamDiagnosticEvent: Sendable {
     case mirrorFront(Bool), clockEnabled(Bool), videoPreset(VideoPreset)
     case audioInterruption(began: Bool)
     case watermarks(count: Int)
+    case frameRates(camera: Double, mixed: Double, cameraGapMs: Double, mixedGapMs: Double)
 
     fileprivate var description: String {
         switch self {
         case .captureRequested(let mode): "Capture requested: \(mode.label)"
-        case .captureReady: "Capture started (delivered FPS not measured)"
+        case .captureReady: "Capture started (waiting for measured frame rates)"
         case .captureFailed: "Capture configuration failed"
         case .permissionsDenied: "Camera or microphone permission denied"
         case .connecting(let rate): "Publish requested: encoder target \(rate) kbps"
@@ -28,6 +29,8 @@ public enum StreamDiagnosticEvent: Sendable {
         case .videoPreset(let mode): "Selected video mode: \(mode.label)"
         case .audioInterruption(let began): "iOS microphone interruption: \(began ? "began" : "ended")"
         case .watermarks(let count): "Encoded image overlays configured: \(count)"
+        case .frameRates(let camera, let mixed, let cameraGap, let mixedGap):
+            String(format: "Camera %.1f FPS / mixed output %.1f FPS; maximum callback gaps %.1f / %.1f ms (latest sample window)", camera, mixed, cameraGap, mixedGap)
         }
     }
 }
@@ -59,7 +62,8 @@ public struct StreamDiagnostics: Sendable {
         Most recent \(entries.count) events; kept in memory, shared only when requested.
         UTC wall-clock timestamps; sequence numbers preserve order if system time changes.
         No stream URLs, keys, channel names, chat text, or raw transport errors are recorded.
-        This timeline does not measure actual FPS, RTT, packet loss, transmitted bitrate or receiver A/V sync.
+        FPS counts camera/compositor callbacks over monotonic elapsed time, not encoded or received frames.
+        RTT, packet loss, transmitted bitrate and receiver A/V sync are not measured.
         """
         return ([header] + entries.map {
             "#\($0.sequence) \(formatter.string(from: $0.date)) — \($0.event.description)"

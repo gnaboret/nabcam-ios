@@ -32,6 +32,10 @@ struct BroadcastView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("GNAB CAM IRL · iOS Preview").font(.headline).foregroundStyle(nabPurple)
                         Text(model.status).font(.caption).foregroundStyle(model.isLive ? nabGreen : .white)
+                        if let capture = model.captureFPS, let mixed = model.mixedFPS {
+                            Text(String(format: "Camera %.1f · Output %.1f FPS", capture, mixed))
+                                .font(.caption.monospacedDigit()).foregroundStyle(.white)
+                        }
                     }
                     .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
                     Spacer()
@@ -152,7 +156,7 @@ struct BroadcastView: View {
                         Picker("Target bitrate", selection: $bitrate) {
                             ForEach([444, 800, 1200, 1600, 2500, 4000, 6000], id: \.self) { Text("\($0) kbps").tag($0) }
                         }.disabled(model.isLive || model.isBusy)
-                        Text("Requested camera rate, not measured delivery. Unsupported camera modes show an error. H.264 + AAC; fixed bitrate target, no adaptive controller yet.").font(.caption)
+                        Text("This selects the requested rate. The HUD measures camera and compositor output separately—not the receiver’s FPS. Unsupported camera modes show an error. H.264 + AAC; no adaptive controller yet.").font(.caption)
                     }
                     Section("Chat") {
                         TextField("Kick channel name", text: $chatChannel)
@@ -212,7 +216,7 @@ struct BroadcastView: View {
                     Section("Diagnostics") {
                         ShareLink("Share diagnostic timeline", item: model.diagnosticReport)
                         Button("Clear diagnostic timeline", role: .destructive) { model.clearDiagnostics() }
-                        Text("Last 300 events, held in memory. No stream keys or chat contents. This is an event timeline, not a measurement of receiver audio sync or network quality.")
+                        Text("Last 300 events, including sampled camera/output FPS and frame gaps. No stream keys or chat contents. Receiver audio sync and network quality are not measured.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }

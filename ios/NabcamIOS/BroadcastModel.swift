@@ -28,6 +28,8 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var clockCorner: ClockCorner = .topRight
     @Published private(set) var watermarks: [WatermarkConfiguration] = []
     @Published private(set) var overlayStorageMessage: String?
+    @Published private(set) var captureFPS: Double?
+    @Published private(set) var mixedFPS: Double?
     @Published var errorMessage: String?
     @Published private var diagnostics = StreamDiagnostics()
     var diagnosticReport: String { diagnostics.report() }
@@ -44,6 +46,9 @@ final class BroadcastModel: ObservableObject {
     private var streamWatermarks: StreamWatermarks?
     private let overlayStore = OverlayPreferencesStore()
     private var overlayPreferencesLoaded = false
+    private let captureMonitor = MixerFrameMonitor(track: 0)
+    private let mixedMonitor = MixerFrameMonitor(track: UInt8.max)
+    private var frameStatsTask: Task<Void, Never>?
 
     private func prepare() async {
         guard active, !audioInterrupted, !isReady, !isBusy else { return }
@@ -93,10 +98,15 @@ final class BroadcastModel: ObservableObject {
             }
             try await mixer.setFrameRate(videoPreset.fps)
             guard active, !audioInterrupted else { await releaseCapture(); return }
+            captureMonitor.reset()
+            mixedMonitor.reset()
+            await mixer.addOutput(captureMonitor)
+            await mixer.addOutput(mixedMonitor)
             await mixer.startRunning()
             isReady = true
             diagnostics.append(.captureReady)
             startClockUpdates()
+            startFrameStatistics()
             await refreshCameraControls()
             status = "Preview · requested \(videoPreset.label)"
         } catch {
@@ -495,6 +505,27 @@ final class BroadcastModel: ObservableObject {
         }
     }
 
+    private func startFrameStatistics() {
+        frameStatsTask?.cancel()
+        frameStatsTask = Task { [weak self] in
+            var samples = 0
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch { return }
+                guard let self, self.isReady, !Task.isCancelled else { return }
+                let capture = self.captureMonitor.snapshot()
+                let mixed = self.mixedMonitor.snapshot()
+                self.captureFPS = capture?.fps
+                self.mixedFPS = mixed?.fps
+                samples += 1
+                if samples == 1 || samples % 10 == 0, let capture, let mixed {
+                    self.diagnostics.append(.frameRates(camera: capture.fps, mixed: mixed.fps,
+                        cameraGapMs: capture.maximumGapMilliseconds, mixedGapMs: mixed.maximumGapMilliseconds))
+                }
+            }
+        }
+    }
+
     private func loadOverlayPreferencesIfNeeded() async {
         guard !overlayPreferencesLoaded else { return }
         overlayPreferencesLoaded = true
@@ -530,6 +561,12 @@ final class BroadcastModel: ObservableObject {
     }
 
     private func releaseCapture() async {
+        frameStatsTask?.cancel()
+        frameStatsTask = nil
+        await mixer.removeOutput(captureMonitor)
+        await mixer.removeOutput(mixedMonitor)
+        captureFPS = nil
+        mixedFPS = nil
         clockTask?.cancel()
         clockTask = nil
         if let clock = streamClock { await clock.remove() }
