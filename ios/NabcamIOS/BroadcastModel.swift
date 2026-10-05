@@ -36,17 +36,18 @@ final class BroadcastModel: ObservableObject {
     private var lifecycleTask: Task<Void, Never>?
     private var generation = 0
     private var active = true
+    private var audioInterrupted = false
     private var streamClock: StreamClock?
     private var clockTask: Task<Void, Never>?
 
     private func prepare() async {
-        guard active, !isReady, !isBusy else { return }
+        guard active, !audioInterrupted, !isReady, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         diagnostics.append(.captureRequested(videoPreset))
         let camera = await AVCaptureDevice.requestAccess(for: .video)
         let microphone = await AVCaptureDevice.requestAccess(for: .audio)
-        guard active else { return }
+        guard active, !audioInterrupted else { return }
         guard camera && microphone else {
             status = "Permissions needed"
             diagnostics.append(.permissionsDenied)
@@ -78,7 +79,7 @@ final class BroadcastModel: ObservableObject {
                 streamClock = clock
             }
             try await mixer.setFrameRate(videoPreset.fps)
-            guard active else { await releaseCapture(); return }
+            guard active, !audioInterrupted else { await releaseCapture(); return }
             await mixer.startRunning()
             isReady = true
             diagnostics.append(.captureReady)
@@ -94,7 +95,7 @@ final class BroadcastModel: ObservableObject {
     }
 
     func start(destination: String, bitrateKbps: Int) {
-        guard active, isReady, !isBusy, session == nil else { return }
+        guard active, !audioInterrupted, isReady, !isBusy, session == nil else { return }
         let validated: StreamDestination
         do { validated = try StreamDestination(destination) }
         catch { errorMessage = error.localizedDescription; return }
@@ -350,6 +351,40 @@ final class BroadcastModel: ObservableObject {
         }
         lifecycleTask = next
         await next.value
+    }
+
+    /// Stop the entire publish session when iOS takes the microphone away. Never
+    /// resume publishing automatically: an interruption may have been a phone call.
+    func handleAudioInterruption(began: Bool) {
+        guard audioInterrupted != began else { return }
+        audioInterrupted = began
+        diagnostics.append(.audioInterruption(began: began))
+        if began {
+            Task {
+                await setActive(false)
+                if audioInterrupted {
+                    status = "Microphone interrupted by iOS · stream stopped"
+                }
+            }
+        } else {
+            Task {
+                guard UIApplication.shared.applicationState == .active else { return }
+                await setActive(true)
+                if isReady, !isLive, !audioInterrupted {
+                    status = "Preview restored · tap Start to broadcast again"
+                }
+            }
+        }
+    }
+
+    func restartPreview() async {
+        guard !isLive, !isBusy, UIApplication.shared.applicationState == .active else { return }
+        // iOS does not guarantee an "ended" notification. An explicit user retry
+        // can attempt activation again; a still-unavailable audio session will fail.
+        audioInterrupted = false
+        await setActive(false)
+        guard UIApplication.shared.applicationState == .active else { return }
+        await setActive(true)
     }
 
     func configureClock(enabled: Bool, corner: ClockCorner) async {

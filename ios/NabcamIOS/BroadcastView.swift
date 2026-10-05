@@ -1,4 +1,5 @@
 import HaishinKit
+import AVFoundation
 import SwiftUI
 import NabcamCore
 
@@ -69,6 +70,15 @@ struct BroadcastView: View {
             }.padding(20)
         }
         .task { connections.load(); await model.setActive(true) }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)) { notification in
+            guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: rawType) else { return }
+            switch type {
+            case .began: model.handleAudioInterruption(began: true)
+            case .ended: model.handleAudioInterruption(began: false)
+            @unknown default: break
+            }
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .background { chat.disconnect(); Task { await model.setActive(false) } }
             else if phase == .active { Task { await model.setActive(true) } }
@@ -166,8 +176,9 @@ struct BroadcastView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     Section("First iOS build") {
+                        Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
                         Text("Plain SRT is not SRTLA. Bonding, USB cameras, image/browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Camera switching is available before going live.").font(.caption)
-                        Button("Restart camera preview") { Task { await model.setActive(false); await model.setActive(true) } }
+                        Button("Restart camera preview") { Task { await model.restartPreview() } }
                             .disabled(model.isLive || model.isBusy)
                     }
                     Section("Diagnostics") {
