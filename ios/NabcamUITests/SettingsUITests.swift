@@ -37,7 +37,7 @@ final class SettingsUITests: XCTestCase {
         let settings = app.buttons["Settings"]
         XCTAssertTrue(settings.waitForExistence(timeout: 30))
         let microphoneFrame = app.buttons["MIC ON"].frame
-        let cameraFrame = app.buttons["SELFIE"].frame
+        let cameraFrame = app.buttons["camera-selector"].frame
         settings.tap()
         if app.alerts.buttons["OK"].waitForExistence(timeout: 3) {
             app.alerts.buttons["OK"].tap()
@@ -89,7 +89,7 @@ final class SettingsUITests: XCTestCase {
                        "Preview must not invent broadcast upload measurements")
         XCTAssertLessThan(settings.frame.maxX, hud.frame.minX)
         XCTAssertEqual(app.buttons["MIC ON"].frame, microphoneFrame)
-        XCTAssertEqual(app.buttons["SELFIE"].frame, cameraFrame)
+        XCTAssertEqual(app.buttons["camera-selector"].frame, cameraFrame)
         if cameraUnavailable {
             XCTAssertFalse(app.staticTexts["capture-resolution-readout"].exists,
                            "Requested resolution must not be presented as observed camera output")
@@ -149,7 +149,7 @@ final class SettingsUITests: XCTestCase {
         }
         setSwitch(handedness, to: "1", app: app, name: "left-handed")
         app.buttons["Done"].tap()
-        XCTAssertLessThan(app.buttons["SELFIE"].frame.maxX, app.buttons["MIC ON"].frame.minX)
+        XCTAssertLessThan(app.buttons["camera-selector"].frame.maxX, app.buttons["MIC ON"].frame.minX)
         XCTAssertLessThan(settings.frame.maxX, hud.frame.minX)
         let chatShortcut = app.buttons["preview-chat-toggle"]
         XCTAssertTrue(chatShortcut.isHittable)

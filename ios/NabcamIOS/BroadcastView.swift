@@ -7,6 +7,35 @@ import NabcamCore
 private let nabPurple = Color(red: 0.64, green: 0.43, blue: 1)
 private let nabGreen = Color(red: 0.05, green: 0.81, blue: 0.63)
 
+/// Short hints stay beside the setting, without creating another Form row.
+private struct SettingLabel: View {
+    let title: String
+    let hint: String
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                Text(title)
+                Text(hint).font(.subheadline).foregroundStyle(nabPurple)
+            }
+            Text(title)
+        }.accessibilityLabel(title).accessibilityHint(hint)
+    }
+}
+
+private struct SettingsHelp: View {
+    let title: String
+    let detail: String
+    @State private var presented = false
+    var body: some View {
+        Button { presented = true } label: {
+            Label(title, systemImage: "info.circle").font(.subheadline)
+        }.foregroundStyle(nabPurple)
+            .alert(title, isPresented: $presented) {
+                Button("Done", role: .cancel) {}
+            } message: { Text(detail) }
+    }
+}
+
 private enum SettingsPage: String, CaseIterable, Identifiable {
     case hub = "Hub", camera = "Camera", connection = "Connection", video = "Video"
     case audio = "Audio", overlay = "Overlay", advanced = "Advanced"
@@ -140,57 +169,52 @@ struct BroadcastView: View {
                             .accessibilityIdentifier("hub-fps-toggle")
                         Toggle("Show resolution", isOn: $showResolution)
                             .accessibilityIdentifier("hub-resolution-toggle")
-                        Toggle("Upload data used", isOn: $showUploadData)
+                        Toggle(isOn: $showUploadData) {
+                            SettingLabel(title: "Upload data used", hint: "This broadcast only")
+                        }
                             .accessibilityIdentifier("hub-upload-toggle")
-                        Text("This broadcast’s local transport bytes—not carrier billing.")
-                            .font(.caption).foregroundStyle(nabPurple)
-                        Toggle("Rule-of-thirds grid", isOn: $showCompositionGrid)
+                        Toggle(isOn: $showCompositionGrid) {
+                            SettingLabel(title: "Rule-of-thirds grid", hint: "Preview only")
+                        }
                             .accessibilityIdentifier("hub-grid-toggle")
-                        Text("Preview guide only—not included in your broadcast.")
-                            .font(.caption).foregroundStyle(nabPurple)
-                        Toggle("Left-handed mode", isOn: $leftHandedMode)
+                        Toggle(isOn: $leftHandedMode) {
+                            SettingLabel(title: "Left-handed mode", hint: "Camera controls on left")
+                        }
                             .accessibilityIdentifier("hub-left-handed-toggle")
-                        Text("Moves camera controls to the left, microphone and chat to the right.")
-                            .font(.caption).foregroundStyle(nabPurple)
-                        Toggle("Swap Settings and status", isOn: $settingsOnLeft)
+                        Toggle(isOn: $settingsOnLeft) {
+                            SettingLabel(title: "Swap Settings and status", hint: "Keep other controls in place")
+                        }
                             .accessibilityIdentifier("hub-swap-toggle")
-                        Text("Swaps only Settings and the status panel relative to your handedness layout.")
-                            .font(.caption).foregroundStyle(nabPurple)
-                        Toggle("Show flashlight button", isOn: $showFlashlightButton)
+                        Toggle(isOn: $showFlashlightButton) {
+                            SettingLabel(title: "Show flashlight button", hint: "Above Chat, when available")
+                        }
                             .accessibilityIdentifier("hub-flashlight-toggle")
-                        Text("Shows above Chat when the camera has a flashlight. Camera settings also controls the light.")
-                            .font(.caption).foregroundStyle(nabPurple)
                     }
                     }
                     if settingsPage == .camera {
                     Section("Camera") {
+                        cameraMenu
                         Toggle("Mirror front camera", isOn: Binding(get: { model.mirrorFrontCamera }, set: { value in
                             Task { await model.setFrontCameraMirrored(value) }
                         })).disabled(!model.isReady || model.isBusy || model.isLive)
-                        Text("Matches the selfie preview and outgoing video. Rear camera stays unmirrored. Change before going live.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        SettingsHelp(title: "About mirroring", detail: "Matches the selfie preview and outgoing video. Rear camera stays unmirrored. Change before going live.")
                         if model.maximumZoom > model.minimumZoom {
                             LabeledContent("Zoom", value: String(format: "%.1f×", model.zoom))
                             Slider(value: Binding(get: { model.zoom }, set: { value in Task { await model.setZoom(value) } }),
                                    in: model.minimumZoom...model.maximumZoom)
                                 .accessibilityLabel("Camera zoom")
                                 .disabled(!model.isReady || model.isBusy)
-                            Text("Digital zoom crops the camera image; higher zoom can reduce detail.")
-                                .font(.caption).foregroundStyle(.secondary)
+                            SettingsHelp(title: "Digital zoom", detail: "Zoom crops the selected camera image and can reduce detail. Use the Camera menu to switch physical lenses.")
                         } else { Text("Zoom is unavailable on this camera.").font(.caption) }
                         if model.canLockFocus {
                             Toggle("Lock focus", isOn: Binding(get: { model.isFocusLocked }, set: { value in
                                 Task { await model.setFocusLocked(value) }
                             })).disabled(!model.isReady || model.isBusy)
-                            Text("Keeps the current focus distance. Turn off to resume autofocus.")
-                                .font(.caption).foregroundStyle(nabPurple)
                         }
                         if model.canLockExposure {
                             Toggle("Lock exposure", isOn: Binding(get: { model.isExposureLocked }, set: { value in
                                 Task { await model.setExposureLocked(value) }
                             })).disabled(!model.isReady || model.isBusy)
-                            Text("Keeps the current exposure. Turn off to follow changing light. Locks apply to the current camera, not a saved connection.")
-                                .font(.caption).foregroundStyle(nabPurple)
                         }
                         if model.hasTorch {
                             Toggle("Flashlight", isOn: Binding(get: { model.isTorchOn }, set: { value in
@@ -221,7 +245,7 @@ struct BroadcastView: View {
                         SecureField("Full RTMP / RTMPS / SRT / SRTLA URL", text: $destination)
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .disabled(model.isLive || model.isBusy)
-                        Text("Include your stream key in the URL. Save stores this connection, video mode, codec, video/audio bitrates and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
+                        SettingsHelp(title: "Connection help", detail: "Include your stream key in the URL. Save stores the connection, video mode, codec, bitrates and chat channel securely on this device. Unsaved edits stay in memory.")
                         if let latency = try? SrtLatencySetting(destination) {
                             Menu {
                                 Button("Use default") { setSrtLatency(nil) }
@@ -282,7 +306,7 @@ struct BroadcastView: View {
                             ForEach([444, 800, 1200, 1600, 2500, 4000, 6000], id: \.self) { Text("\($0) kbps").tag($0) }
                         }.disabled(model.isLive || model.isBusy)
                             .accessibilityIdentifier("video-bitrate-picker")
-                        Text("This selects the requested average rate. The HUD measures camera and compositor output separately—not the receiver’s FPS. Unsupported camera modes show an error. AAC audio; no adaptive controller yet.").font(.caption)
+                        SettingsHelp(title: "Bitrate and FPS", detail: "Target bitrate is the requested average video rate, not a minimum. Adaptive bitrate is not included yet. The HUD measures local camera and compositor FPS, not receiver FPS. Unsupported camera modes show an error.")
                     }
                     }
                     if settingsPage == .audio {
@@ -291,8 +315,7 @@ struct BroadcastView: View {
                             ForEach(AudioBitrate.allCases) { Text($0.label).tag($0) }
                         }.disabled(model.isLive || model.isBusy)
                             .accessibilityIdentifier("audio-bitrate-picker")
-                        Text("96 kbps is the default. Higher rates use more upload data; they do not make the microphone louder. Change before going live.")
-                            .font(.caption).foregroundStyle(nabPurple)
+                        SettingsHelp(title: "Audio quality", detail: "96 kbps is the default. Higher rates use more upload data, but do not make the microphone louder. Change before going live.")
                         Toggle("Mute microphone", isOn: Binding(get: { model.isMuted }, set: { value in
                             if value != model.isMuted { Task { await model.toggleMute() } }
                         })).disabled(!model.isReady || model.isBusy)
@@ -417,6 +440,8 @@ struct BroadcastView: View {
                 }
                 .id(settingsPage)
                 .accessibilityIdentifier("settings-form")
+                .frame(maxWidth: 900)
+                .frame(maxWidth: .infinity)
                 }
                 .navigationTitle("Settings")
                 .navigationBarTitleDisplayMode(.inline)
@@ -533,9 +558,28 @@ struct BroadcastView: View {
                     }
                 }
             }
-            Button(model.isFront ? "REAR CAMERA" : "SELFIE") { Task { await model.switchCamera() } }
-                .disabled(!model.isReady || model.isBusy)
+            cameraMenu
+            if model.canFlipCamera {
+                Button(model.isFront ? "REAR CAMERA" : "SELFIE") { Task { await model.switchCamera() } }
+                    .disabled(!model.isReady || model.isBusy)
+            }
         }
+    }
+
+    private var cameraMenu: some View {
+        Menu {
+            ForEach(model.cameras) { camera in
+                Button { Task { await model.selectCamera(camera.id) } } label: {
+                    if camera.id == model.selectedCameraID {
+                        Label(camera.name, systemImage: "checkmark")
+                    } else { Text(camera.name) }
+                }
+            }
+        } label: {
+            Label(model.cameras.first(where: { $0.id == model.selectedCameraID })?.name ?? "Camera unavailable",
+                  systemImage: "camera.rotate")
+        }.accessibilityIdentifier("camera-selector")
+            .disabled(!model.isReady || model.isBusy || model.cameras.count < 2)
     }
 
     private var settingsButton: some View {

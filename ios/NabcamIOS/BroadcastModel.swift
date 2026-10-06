@@ -16,6 +16,40 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var isBusy = false
     @Published private(set) var isMuted = false
     @Published private(set) var isFront = false
+    @Published private(set) var cameras: [CameraChoice] = []
+    @Published private(set) var selectedCameraID: String?
+    struct CameraChoice: Identifiable {
+        let id: String
+        let name: String
+        let front: Bool
+    }
+    private var cameraDevices: [AVCaptureDevice] = []
+    private var cameraSelection: [CameraSelection] {
+        cameraDevices.map { CameraSelection(id: $0.uniqueID, front: $0.position == .front,
+                                           wide: $0.deviceType == .builtInWideAngleCamera) }
+    }
+    var canFlipCamera: Bool { cameras.contains { $0.front != isFront } }
+
+    private func discoverCameras() {
+        // Physical lenses only: virtual dual/triple devices would duplicate lenses.
+        cameraDevices = AVCaptureDevice.DiscoverySession(deviceTypes: [
+            .builtInWideAngleCamera, .builtInUltraWideCamera,
+            .builtInTelephotoCamera, .builtInTrueDepthCamera
+        ], mediaType: .video, position: .unspecified).devices
+            .sorted { $0.uniqueID < $1.uniqueID }
+        cameras = cameraDevices.map { device in
+            let side = device.position == .front ? "Front" : "Rear"
+            let lens: String
+            switch device.deviceType {
+            case .builtInUltraWideCamera: lens = "ultra wide"
+            case .builtInTelephotoCamera: lens = "telephoto"
+            case .builtInTrueDepthCamera: lens = "TrueDepth"
+            default: lens = "wide"
+            }
+            return CameraChoice(id: device.uniqueID, name: "\(side) · \(lens)", front: device.position == .front)
+        }
+        selectedCameraID = CameraSelection.initial(in: cameraSelection, keeping: selectedCameraID)
+    }
     @Published private(set) var mirrorFrontCamera = false
     @Published private(set) var videoPreset: VideoPreset = .hd30
     @Published private(set) var isConnecting = false
@@ -124,8 +158,10 @@ final class BroadcastModel: ObservableObject {
             await mixer.setMonitoringEnabled(false)
             await mixer.setSessionPreset(videoPreset.height == 720 ? .hd1280x720 : .hd1920x1080)
             await mixer.setVideoOrientation(.landscapeRight)
-            guard let video = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: isFront ? .front : .back),
+            discoverCameras()
+            guard let video = cameraDevices.first(where: { $0.uniqueID == selectedCameraID }),
                   let microphone = AVCaptureDevice.default(for: .audio) else { throw CaptureError.unavailable }
+            isFront = video.position == .front
             try await mixer.attachVideo(video)
             try await applyCameraMirroring()
             try await mixer.attachAudio(microphone)
@@ -455,16 +491,21 @@ final class BroadcastModel: ObservableObject {
     }
 
     func switchCamera() async {
+        guard let next = CameraSelection.opposite(in: cameraSelection, front: isFront) else { return }
+        await selectCamera(next)
+    }
+
+    func selectCamera(_ id: String) async {
         guard active, !audioInterrupted, isReady, !isBusy else { return }
+        guard let previousID = selectedCameraID, previousID != id else { return }
         let previousFront = isFront
-        let nextFront = !previousFront
         let preset = videoPreset
         let mirrored = mirrorFrontCamera
-        guard AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: previousFront ? .front : .back) != nil,
-              let next = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: nextFront ? .front : .back) else {
+        guard let next = cameraDevices.first(where: { $0.uniqueID == id }) else {
             errorMessage = "The other camera is unavailable. Your current camera was kept."
             return
         }
+        let nextFront = next.position == .front
         guard next.formats.contains(where: { format in
             let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
             return size.width >= preset.width && size.height >= preset.height && format.videoSupportedFrameRateRanges.contains {
@@ -481,10 +522,12 @@ final class BroadcastModel: ObservableObject {
         guard owner == generation, active, !audioInterrupted else { return }
         diagnostics.append(.cameraSwitchStarted(front: nextFront, live: isLive))
         let result = await cameraSwitch.run(apply: { [self] in
-            try await attachCamera(front: nextFront, mirrored: nextFront && mirrored, fps: preset.fps)
+            try await attachCamera(id: id, mirrored: nextFront && mirrored, fps: preset.fps)
+            selectedCameraID = id
             isFront = nextFront
         }, restore: { [self] in
-            try await attachCamera(front: previousFront, mirrored: previousFront && mirrored, fps: preset.fps)
+            try await attachCamera(id: previousID, mirrored: previousFront && mirrored, fps: preset.fps)
+            selectedCameraID = previousID
             isFront = previousFront
         })
         guard owner == generation, active, !audioInterrupted else { return }
@@ -505,10 +548,10 @@ final class BroadcastModel: ObservableObject {
         await refreshCameraControls()
     }
 
-    private func attachCamera(front: Bool, mirrored: Bool, fps: Double) async throws {
+    private func attachCamera(id: String, mirrored: Bool, fps: Double) async throws {
         // Replace video only. Keep the audio input, mixer, stream, codec settings
         // and transport alive; never reset their clocks to hide a camera gap.
-        guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: front ? .front : .back) else {
+        guard let device = cameraDevices.first(where: { $0.uniqueID == id }) else {
             throw CaptureError.unavailable
         }
         try await mixer.attachVideo(device)
