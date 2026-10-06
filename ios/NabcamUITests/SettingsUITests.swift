@@ -155,6 +155,12 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(chatShortcut.isHittable)
         attach("preview-left-handed", app: app)
         settings.tap()
+        XCTAssertTrue(form.waitForExistence(timeout: 5))
+        for _ in 0..<8 {
+            if fullyVisible(handedness, in: app, form: form) { break }
+            scroll(form, toward: handedness)
+        }
+        XCTAssertTrue(fullyVisible(handedness, in: app, form: form))
         XCTAssertEqual(handedness.value as? String, "1")
         setSwitch(handedness, to: "0", app: app, name: "left-handed")
         selectPage("camera", app: app)
