@@ -31,6 +31,7 @@ final class StreamBrowserOverlays {
         }
         remove()
         self.screen = screen
+        screen.size = CGSize(width: width, height: height)
         entries = proposed
         do {
             for id in entries.keys.sorted() {

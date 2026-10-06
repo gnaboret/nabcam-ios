@@ -47,6 +47,12 @@ final class BroadcastModel: ObservableObject {
     let hardwareHEVC = VideoEncoderConfiguration.hardwareHEVC
     func clearDiagnostics() { diagnostics.clear() }
     let mixer = MediaMixer()
+    let browserSources = BrowserOverlaySources()
+    let browserHost = BrowserOverlayHost(frame: .zero)
+    let browserController = BrowserOverlayController()
+    @Published private(set) var browserPreviewMixer: MediaMixer?
+    private var browserPreview: BrowserPreviewComposition?
+    private var streamBrowser: StreamBrowserOverlays?
     private var session: (any Session)?
     // Keep the SRT runtime/stream alive across Start and Stop. The session resets
     // its socket and credentials between attempts, without global runtime churn.
@@ -76,6 +82,7 @@ final class BroadcastModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         await loadOverlayPreferencesIfNeeded()
+        browserSources.load()
         guard active, !audioInterrupted else { return }
         diagnostics.append(.captureRequested(videoPreset))
         let camera = await AVCaptureDevice.requestAccess(for: .video)
@@ -103,7 +110,8 @@ final class BroadcastModel: ObservableObject {
             let captureFPS = videoPreset.fps
             try await mixer.configuration(video: 0) { try $0.setFrameRate(captureFPS) }
             var mixing = await mixer.videoMixerSettings
-            mixing.mode = (clockEnabled || !watermarks.isEmpty) ? .offscreen : .passthrough
+            let browserConfigurations = browserSources.sources.filter(\.enabled)
+            mixing.mode = (clockEnabled || !watermarks.isEmpty || browserConfigurations.contains { $0.destination != .previewOnly }) ? .offscreen : .passthrough
             await mixer.setVideoMixerSettings(mixing)
             if !watermarks.isEmpty {
                 let images = try await StreamWatermarks(configurations: watermarks,
@@ -118,6 +126,12 @@ final class BroadcastModel: ObservableObject {
                 streamClock = clock
             }
             try await mixer.setFrameRate(videoPreset.fps)
+            if !browserConfigurations.isEmpty {
+                let browser = await StreamBrowserOverlays()
+                streamBrowser = browser
+                try await browser.install(on: mixer.screen, sources: browserConfigurations,
+                                          width: videoPreset.width, height: videoPreset.height)
+            }
             guard active, !audioInterrupted else { await releaseCapture(); return }
             captureMonitor.reset()
             mixedMonitor.reset()
@@ -126,6 +140,18 @@ final class BroadcastModel: ObservableObject {
             await mixer.addOutput(mixedMonitor)
             await mixer.addOutput(audioMonitor)
             await mixer.startRunning()
+            if !browserConfigurations.isEmpty, let streamBrowser {
+                let preview = BrowserPreviewComposition()
+                browserPreview = preview
+                try await preview.start(sourceMixer: mixer, preset: videoPreset, watermarks: watermarks,
+                                        clockEnabled: clockEnabled, clockCorner: clockCorner, sources: browserConfigurations)
+                guard active, !audioInterrupted else { await releaseCapture(); return }
+                browserPreviewMixer = preview.mixer
+                try browserController.start(sources: browserConfigurations, host: browserHost) { id, image in
+                    await streamBrowser.update(id: id, image: image)
+                    await preview.update(id: id, image: image)
+                }
+            }
             isReady = true
             diagnostics.append(.captureReady)
             startClockUpdates()
@@ -849,6 +875,12 @@ final class BroadcastModel: ObservableObject {
     }
 
     private func releaseCapture() async {
+        browserController.stop()
+        browserPreviewMixer = nil
+        await browserPreview?.stop()
+        browserPreview = nil
+        await streamBrowser?.remove()
+        streamBrowser = nil
         audioMeterTask?.cancel()
         audioMeterTask = nil
         await mixer.removeOutput(audioMonitor)

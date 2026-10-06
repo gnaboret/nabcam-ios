@@ -42,7 +42,9 @@ struct BroadcastView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            CapturePreview(model: model).ignoresSafeArea()
+            BrowserHostView(host: model.browserHost).ignoresSafeArea().allowsHitTesting(false)
+            CapturePreview(mixer: model.browserPreviewMixer ?? model.mixer)
+                .id(ObjectIdentifier(model.browserPreviewMixer ?? model.mixer)).ignoresSafeArea()
             if showCompositionGrid, model.isReady, !model.isBusy, let size = model.previewDimensions {
                 PreviewCompositionGrid(frameSize: size).ignoresSafeArea()
             }
@@ -303,12 +305,15 @@ struct BroadcastView: View {
                         Text("Local time in preview and outgoing video. Change before going live; preview restarts. Compositing performance still needs iPhone testing.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    BrowserSourceSettings(store: model.browserSources, locked: model.isLive || model.isBusy) {
+                        await model.restartPreview()
+                    }
                     }
                     if settingsPage == .advanced {
                     Section("About this iOS build") {
                         NavigationLink("Open-source acknowledgments") { AcknowledgmentsView() }
                         Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
-                        Text("SRTLA is opt-in and experimental. Dual-SIM bonding, USB cameras, browser overlays, Twitch chat, purchases and background broadcasting are not included yet. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
+                        Text("SRTLA and browser overlays are experimental and need device testing. Dual-SIM bonding, USB cameras, Twitch chat, purchases and background broadcasting are not included yet. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
                         Button("Restart camera preview") { Task { await model.restartPreview() } }
                             .disabled(model.isLive || model.isBusy)
                     }
@@ -480,12 +485,36 @@ struct BroadcastView: View {
 }
 
 private struct CapturePreview: UIViewRepresentable {
-    let model: BroadcastModel
+    let mixer: MediaMixer
+    final class Coordinator {
+        var task: Task<Void, Never>?
+        var mixer: MediaMixer?
+    }
+    func makeCoordinator() -> Coordinator { Coordinator() }
     func makeUIView(context: Context) -> MTHKView {
         let view = MTHKView(frame: .zero)
         view.videoGravity = .resizeAspect
-        Task { await model.mixer.addOutput(view) }
+        context.coordinator.mixer = mixer
+        context.coordinator.task = Task {
+            await mixer.addOutput(view)
+            if Task.isCancelled { await mixer.removeOutput(view) }
+        }
         return view
     }
     func updateUIView(_ uiView: MTHKView, context: Context) {}
+    static func dismantleUIView(_ uiView: MTHKView, coordinator: Coordinator) {
+        coordinator.task?.cancel()
+        let task = coordinator.task
+        let mixer = coordinator.mixer
+        Task {
+            await task?.value
+            await mixer?.removeOutput(uiView)
+        }
+    }
+}
+
+private struct BrowserHostView: UIViewRepresentable {
+    let host: BrowserOverlayHost
+    func makeUIView(context: Context) -> BrowserOverlayHost { host }
+    func updateUIView(_ uiView: BrowserOverlayHost, context: Context) { }
 }
