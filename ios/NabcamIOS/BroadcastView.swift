@@ -252,9 +252,11 @@ struct BroadcastView: View {
                         })).disabled(!model.isReady || model.isBusy)
                         Toggle("Microphone processing · experimental", isOn: $model.microphoneProcessingEnabled)
                             .disabled(model.isLive || model.isBusy)
+                            .accessibilityIdentifier("microphone-processing-toggle")
                         if model.microphoneProcessingEnabled {
                             Stepper("Microphone gain: \(model.microphoneGainDB) dB", value: $model.microphoneGainDB, in: -12...24)
                                 .disabled(model.isLive || model.isBusy)
+                                .accessibilityIdentifier("microphone-gain-stepper")
                             Toggle("Peak limiter", isOn: $model.microphoneLimiterEnabled)
                                 .disabled(model.isLive || model.isBusy)
                             Text("Applies gain before encoding; limiter ceiling is −1 dBFS. The HUD meter shows input levels before this stage. Change before going live. Device testing is still needed.")

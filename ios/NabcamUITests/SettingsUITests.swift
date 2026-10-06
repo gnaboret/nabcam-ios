@@ -219,6 +219,21 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(fullyVisible(audio, in: app, form: form))
         XCTAssertTrue(audio.label.contains("96 kbps") || (audio.value as? String)?.contains("96 kbps") == true)
         attach("settings-audio", app: app)
+        let processing = app.switches["microphone-processing-toggle"]
+        for _ in 0..<24 {
+            if fullyVisible(processing, in: app, form: form) { break }
+            scroll(form, toward: processing)
+        }
+        XCTAssertTrue(fullyVisible(processing, in: app, form: form))
+        XCTAssertEqual(processing.value as? String, "0")
+        processing.tap()
+        let gain = app.steppers["microphone-gain-stepper"]
+        for _ in 0..<24 {
+            if fullyVisible(gain, in: app, form: form) { break }
+            scroll(form, toward: gain)
+        }
+        XCTAssertTrue(fullyVisible(gain, in: app, form: form))
+        attach("settings-microphone-processing", app: app)
         selectPage("overlay", app: app)
         XCTAssertTrue(app.textFields["Kick channel name"].exists)
         let addWatermark = app.buttons["Add image watermark"]
