@@ -222,6 +222,23 @@ struct BroadcastView: View {
                             .textInputAutocapitalization(.never).autocorrectionDisabled()
                             .disabled(model.isLive || model.isBusy)
                         Text("Include your stream key in the URL. Save stores this connection, video mode, codec, video/audio bitrates and chat channel securely on this iPhone. Unsaved edits stay in memory.").font(.caption).foregroundStyle(.secondary)
+                        if let latency = try? SrtLatencySetting(destination) {
+                            Menu {
+                                Button("Use default") { setSrtLatency(nil) }
+                                ForEach([120, 250, 500, 1000, 1500, 2500, 4000], id: \.self) { value in
+                                    Button(String(value) + " ms") { setSrtLatency(value) }
+                                }
+                            } label: {
+                                HStack {
+                                    Text("SRT latency")
+                                    Spacer()
+                                    Text(latency.milliseconds.map { "\($0) ms" } ?? "Default")
+                                }
+                            }.disabled(model.isLive || model.isBusy)
+                                .accessibilityIdentifier("srt-latency-menu")
+                            Text("More buffering can help recover lost packets, but adds delay. The receiver may require more. Save to remember this connection’s value.")
+                                .font(.caption).foregroundStyle(nabPurple)
+                        }
                         Toggle("Experimental SRTLA", isOn: Binding(get: { model.experimentalSrtlaEnabled }, set: {
                             model.setExperimentalSrtla($0)
                         })).disabled(model.isLive || model.isBusy).accessibilityIdentifier("experimental-srtla-toggle")
@@ -562,6 +579,15 @@ struct BroadcastView: View {
         .padding(12).background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 16))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("status-hud")
+    }
+
+    private func setSrtLatency(_ milliseconds: Int?) {
+        do {
+            destination = try SrtLatencySetting(destination).replacing(with: milliseconds)
+            profileNotice = "Latency updated · save to remember"
+        } catch {
+            profileNotice = "Latency could not be changed. Check the connection URL’s latency options."
+        }
     }
 
     private func saveConnection() {

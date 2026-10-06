@@ -178,6 +178,26 @@ final class SettingsUITests: XCTestCase {
         selectPage("connection", app: app)
         XCTAssertEqual(nameField.value as? String, "Unsaved test connection",
                        "Changing settings pages must not discard connection edits")
+        let destinationField = app.secureTextFields["Full RTMP / RTMPS / SRT / SRTLA URL"]
+        destinationField.tap()
+        destinationField.typeText("srt://example.test:9000?latency=500")
+        selectPage("video", app: app)
+        selectPage("connection", app: app)
+        let latencyMenu = app.buttons["srt-latency-menu"]
+        for _ in 0..<12 {
+            if fullyVisible(latencyMenu, in: app, form: form) { break }
+            scroll(form, toward: latencyMenu)
+        }
+        XCTAssertTrue(fullyVisible(latencyMenu, in: app, form: form))
+        XCTAssertTrue(latencyMenu.label.contains("500 ms"))
+        latencyMenu.tap()
+        XCTAssertTrue(app.buttons["2500 ms"].waitForExistence(timeout: 5))
+        app.buttons["2500 ms"].tap()
+        XCTAssertTrue(latencyMenu.label.contains("2500 ms"))
+        attach("settings-srt-latency", app: app)
+        latencyMenu.tap()
+        app.buttons["Use default"].tap()
+        XCTAssertTrue(latencyMenu.label.contains("Default"))
         let relayToggle = app.switches["experimental-srtla-toggle"]
         for _ in 0..<24 {
             if fullyVisible(relayToggle, in: app, form: form) { break }
