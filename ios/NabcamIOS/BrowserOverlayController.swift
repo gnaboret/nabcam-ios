@@ -26,6 +26,7 @@ final class BrowserOverlayController: ObservableObject {
         pages = proposed
         host.attach(proposed)
         for page in pages { page.load() }
+        guard !pages.isEmpty else { return }
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
                 self?.refresh()

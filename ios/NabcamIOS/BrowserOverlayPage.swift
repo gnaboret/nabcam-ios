@@ -68,7 +68,8 @@ final class BrowserOverlayPage: NSObject, ObservableObject, WKNavigationDelegate
         config.snapshotWidth = NSNumber(value: size.width)
         timeout = Task { [weak self] in
             do { try await Task.sleep(for: .seconds(5)) } catch { return }
-            guard let self, self.snapshotID == request, self.snapshotInFlight else { return }
+            guard let self, self.snapshotID == request, self.snapshotInFlight,
+                  self.generation == owner, self.state != .stopped else { return }
             self.state = .failed
             self.view.stopLoading()
             // Keep inFlight set until WebKit completes; never pile up requests.
