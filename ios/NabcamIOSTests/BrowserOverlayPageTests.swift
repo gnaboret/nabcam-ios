@@ -50,14 +50,24 @@ final class BrowserOverlayPageTests: XCTestCase {
         #green{position:absolute;right:0;bottom:0;width:100px;height:100px;background:#00ff00}</style>
         <div id="red"></div><div id="green"></div>
         """, baseURL: URL(string: source.url))
-        for _ in 0..<100 {
+        // A cold simulator has taken over 16 seconds to launch WebContent.
+        // This is startup allowance, not a relaxation of snapshot/pixel checks.
+        let clock = ContinuousClock()
+        let startupDeadline = clock.now.advanced(by: .seconds(45))
+        while clock.now < startupDeadline {
             if page.state == .ready || page.state == .failed { break }
             try await Task.sleep(for: .milliseconds(100))
         }
-        XCTAssertEqual(page.state, .ready)
+        guard page.state == .ready else {
+            XCTFail("WebKit did not become ready before startup deadline: \(page.state)")
+            return
+        }
         let completed = expectation(description: "WebKit snapshot")
         var result: CGImage?
-        XCTAssertTrue(page.requestSnapshot { image in result = image; completed.fulfill() })
+        guard page.requestSnapshot({ image in result = image; completed.fulfill() }) else {
+            XCTFail("Ready attached WebKit page rejected its first snapshot")
+            return
+        }
         XCTAssertFalse(page.requestSnapshot { _ in XCTFail("Must not queue a second snapshot") })
         await fulfillment(of: [completed], timeout: 10)
         let image = try XCTUnwrap(result)
