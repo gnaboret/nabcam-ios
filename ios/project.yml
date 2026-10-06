@@ -76,6 +76,7 @@ targets:
       - path: NabcamIOS/BrowserOverlayHost.swift
       - path: NabcamIOS/BrowserOverlayController.swift
       - path: NabcamIOS/StreamBrowserOverlays.swift
+      - path: NabcamIOS/PreviewVideoBridge.swift
       - path: NabcamIOS/StreamWatermarks.swift
       - path: NabcamIOS/OverlayCorner.swift
       - path: NabcamIOS/OverlayPreferencesStore.swift
