@@ -1,9 +1,25 @@
 import copy
 import unittest
-from verify_av_fixture import validate
+import math
+from verify_av_fixture import validate, validate_processed_audio
 
 
 class AVFixtureValidationTests(unittest.TestCase):
+    def test_processed_audio_accepts_limited_gain_and_rejects_bypass(self):
+        wave = [math.sin(index * 0.0576) for index in range(90_000)]
+        rms, peak = validate_processed_audio([value * 0.89125 for value in wave])
+        self.assertGreater(rms, 0.6)
+        self.assertLess(peak, 0.9)
+        for amplitude in [0, 0.25, 1.5]:
+            with self.assertRaises(AssertionError):
+                validate_processed_audio([value * amplitude for value in wave])
+
+    def test_processed_audio_rejects_short_and_invalid_samples(self):
+        for samples in [[0.6] * 100, [0.6] * 60_000 + [float('nan')],
+                        [0.6] * 60_000 + [float('inf')], [0.6] * 60_000 + [1.1]]:
+            with self.assertRaises(AssertionError):
+                validate_processed_audio(samples)
+
     def setUp(self):
         self.report = {
             "streams": [{"codec_type": "video", "codec_name": "h264"},

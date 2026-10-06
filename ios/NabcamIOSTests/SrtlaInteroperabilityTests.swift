@@ -28,6 +28,10 @@ final class SrtlaInteroperabilityTests: XCTestCase {
         try await exerciseStream(blackholeOnePath: false, videoFormatChange: true)
     }
 
+    func testProcessedAudioAndVideoReachReceiverAfterFormatChange() async throws {
+        try await exerciseStream(blackholeOnePath: false, videoFormatChange: true, processAudio: true)
+    }
+
     func testEscapedStreamIDAndPassphraseReachReceiverUnchanged() async throws {
         try await exerciseStream(blackholeOnePath: false, escapedCredentials: true, audioBitrate: .kbps128)
     }
@@ -70,7 +74,8 @@ final class SrtlaInteroperabilityTests: XCTestCase {
     }
 
     private func exerciseStream(blackholeOnePath: Bool, escapedCredentials: Bool = false, encrypted: Bool = true,
-                                videoFormatChange: Bool = false, audioBitrate: AudioBitrate = .kbps96) async throws {
+                                videoFormatChange: Bool = false, audioBitrate: AudioBitrate = .kbps96,
+                                processAudio: Bool = false) async throws {
         // All addresses are loopback; this never contacts a user's stream host.
         // The passphrase is a fixed, synthetic test fixture, not an account secret.
         let session = Self.session
@@ -118,6 +123,9 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             let connected = await session.connected
             XCTAssertTrue(connected)
             let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+            let mixer = MediaMixer()
+            let processedOutput = MicrophoneProcessingOutput(destination: stream, gainDB: 12,
+                limiterEnabled: true, onFailure: { XCTFail("Synthetic PCM processing failed") })
             var packetsBeforeLinkLoss = 0
             var beforeFormatChange = NativeSRTReceiver.Snapshot()
             for frame in 0..<90 {
@@ -135,7 +143,9 @@ final class SrtlaInteroperabilityTests: XCTestCase {
                 buffer.frameLength = 1024
                 let samples = try XCTUnwrap(buffer.floatChannelData?[0])
                 for index in 0..<1024 { samples[index] = Float(sin(Double(frame * 1024 + index) * 0.0576)) * 0.25 }
-                await stream.append(buffer, when: AVAudioTime(sampleTime: Int64(frame * 1024), atRate: 48_000))
+                let audioTime = AVAudioTime(sampleTime: Int64(frame * 1024), atRate: 48_000)
+                if processAudio { processedOutput.mixer(mixer, didOutput: buffer, when: audioTime) }
+                else { await stream.append(buffer, when: audioTime) }
                 if videoFormatChange, frame.isMultiple(of: 2) {
                     // Synthetic capture input changes size, while the requested
                     // output and the audio/publisher session remain unchanged.
@@ -185,7 +195,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
                 let recording = try XCTUnwrap(server.fixtureRecording())
                 XCTAssertFalse(received.recordingOverflow)
                 let attachment = XCTAttachment(data: recording, uniformTypeIdentifier: "public.data")
-                attachment.name = "srtla-av-format-change.ts"
+                attachment.name = processAudio ? "srtla-av-processed-audio.ts" : "srtla-av-format-change.ts"
                 attachment.lifetime = .keepAlways
                 add(attachment)
             }

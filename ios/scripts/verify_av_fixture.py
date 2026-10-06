@@ -9,6 +9,20 @@ import math
 import pathlib
 import subprocess
 import sys
+import struct
+
+
+def validate_processed_audio(samples):
+    assert len(samples) >= 60_000, 'Too little processed receiver audio'
+    assert all(math.isfinite(value) for value in samples), 'Invalid decoded audio sample'
+    rms = math.sqrt(sum(value * value for value in samples) / len(samples))
+    peak = max(abs(value) for value in samples)
+    # The synthetic input is a 0.25-peak sine. +12 dB with a -1 dBFS
+    # limiter should produce approximately 0.63 RMS, not bypassed 0.177 RMS.
+    # Allow AAC's small reconstruction overshoot, not sustained clipping.
+    assert 0.50 <= rms <= 0.70, f'Unexpected processed audio RMS: {rms}'
+    assert peak <= 1.05, f'Unexpected processed audio peak: {peak}'
+    return rms, peak
 
 
 def validate(report):
@@ -48,6 +62,14 @@ def main():
     assert not result.stderr.strip(), f"Decoder reported errors: {result.stderr[:4000]}"
     report = json.loads(result.stdout)
     counts = validate(report)
+    if '--processed-audio' in sys.argv[2:]:
+        decoded = subprocess.run(['ffmpeg', '-v', 'error', '-i', str(source),
+                                  '-map', '0:a:0', '-f', 'f32le', '-acodec', 'pcm_f32le', '-'],
+                                 capture_output=True, timeout=60, check=True)
+        assert not decoded.stderr.strip(), 'Processed audio decoder reported errors'
+        assert 0 < len(decoded.stdout) <= 2 * 1024 * 1024 and len(decoded.stdout) % 4 == 0
+        samples = [value[0] for value in struct.iter_unpack('<f', decoded.stdout)]
+        print('Processed receiver audio RMS/peak:', validate_processed_audio(samples))
     print("Synthetic receiver A/V decoded across the input format change:", counts)
     print("This does not establish iPhone camera FPS, perceptual quality, or physical lip sync.")
 

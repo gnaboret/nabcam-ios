@@ -74,15 +74,17 @@ jobs:
           import json, pathlib, shutil
           root = pathlib.Path('build/receiver-attachments')
           manifest = json.loads((root / 'manifest.json').read_text())
-          matches = [a for test in manifest for a in test.get('attachments', [])
-                     if a.get('suggestedHumanReadableName', '').startswith('srtla-av-format-change_')
-                     and a['suggestedHumanReadableName'].endswith('.ts')]
-          assert len(matches) == 1, 'Expected exactly one synthetic receiver recording'
-          source = (root / matches[0]['exportedFileName']).resolve(strict=True)
-          assert source.parent == root.resolve() and 0 < source.stat().st_size <= 2 * 1024 * 1024
-          shutil.copyfile(source, 'build/srtla-av-format-change.ts')
+          for name in ['srtla-av-format-change', 'srtla-av-processed-audio']:
+              matches = [a for test in manifest for a in test.get('attachments', [])
+                         if a.get('suggestedHumanReadableName', '').startswith(name + '_')
+                         and a['suggestedHumanReadableName'].endswith('.ts')]
+              assert len(matches) == 1, 'Expected exactly one synthetic receiver recording: ' + name
+              source = (root / matches[0]['exportedFileName']).resolve(strict=True)
+              assert source.parent == root.resolve() and 0 < source.stat().st_size <= 2 * 1024 * 1024
+              shutil.copyfile(source, 'build/' + name + '.ts')
           PY
           python3 scripts/verify_av_fixture.py build/srtla-av-format-change.ts
+          python3 scripts/verify_av_fixture.py build/srtla-av-processed-audio.ts --processed-audio
       - name: Exercise Settings UI and capture screenshots
         if: ${{ !cancelled() && (inputs.ui_only || steps.device_build.outcome == 'success') }}
         working-directory: ios
