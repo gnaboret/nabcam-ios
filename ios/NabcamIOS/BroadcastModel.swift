@@ -22,22 +22,21 @@ final class BroadcastModel: ObservableObject {
         let id: String
         let name: String
         let front: Bool
+        let wide: Bool
     }
-    private var cameraDevices: [AVCaptureDevice] = []
     private var cameraSelection: [CameraSelection] {
-        cameraDevices.map { CameraSelection(id: $0.uniqueID, front: $0.position == .front,
-                                           wide: $0.deviceType == .builtInWideAngleCamera) }
+        cameras.map { CameraSelection(id: $0.id, front: $0.front, wide: $0.wide) }
     }
     var canFlipCamera: Bool { cameras.contains { $0.front != isFront } }
 
     private func discoverCameras() {
         // Physical lenses only: virtual dual/triple devices would duplicate lenses.
-        cameraDevices = AVCaptureDevice.DiscoverySession(deviceTypes: [
+        let devices = AVCaptureDevice.DiscoverySession(deviceTypes: [
             .builtInWideAngleCamera, .builtInUltraWideCamera,
             .builtInTelephotoCamera, .builtInTrueDepthCamera
         ], mediaType: .video, position: .unspecified).devices
             .sorted { $0.uniqueID < $1.uniqueID }
-        cameras = cameraDevices.map { device in
+        cameras = devices.map { device in
             let side = device.position == .front ? "Front" : "Rear"
             let lens: String
             switch device.deviceType {
@@ -46,7 +45,8 @@ final class BroadcastModel: ObservableObject {
             case .builtInTrueDepthCamera: lens = "TrueDepth"
             default: lens = "wide"
             }
-            return CameraChoice(id: device.uniqueID, name: "\(side) · \(lens)", front: device.position == .front)
+            return CameraChoice(id: device.uniqueID, name: "\(side) · \(lens)", front: device.position == .front,
+                                wide: device.deviceType == .builtInWideAngleCamera)
         }
         selectedCameraID = CameraSelection.initial(in: cameraSelection, keeping: selectedCameraID)
     }
@@ -159,7 +159,7 @@ final class BroadcastModel: ObservableObject {
             await mixer.setSessionPreset(videoPreset.height == 720 ? .hd1280x720 : .hd1920x1080)
             await mixer.setVideoOrientation(.landscapeRight)
             discoverCameras()
-            guard let video = cameraDevices.first(where: { $0.uniqueID == selectedCameraID }),
+            guard let selectedCameraID, let video = AVCaptureDevice(uniqueID: selectedCameraID),
                   let microphone = AVCaptureDevice.default(for: .audio) else { throw CaptureError.unavailable }
             isFront = video.position == .front
             try await mixer.attachVideo(video)
@@ -501,7 +501,7 @@ final class BroadcastModel: ObservableObject {
         let previousFront = isFront
         let preset = videoPreset
         let mirrored = mirrorFrontCamera
-        guard let next = cameraDevices.first(where: { $0.uniqueID == id }) else {
+        guard let next = AVCaptureDevice(uniqueID: id) else {
             errorMessage = "The other camera is unavailable. Your current camera was kept."
             return
         }
@@ -551,7 +551,7 @@ final class BroadcastModel: ObservableObject {
     private func attachCamera(id: String, mirrored: Bool, fps: Double) async throws {
         // Replace video only. Keep the audio input, mixer, stream, codec settings
         // and transport alive; never reset their clocks to hide a camera gap.
-        guard let device = cameraDevices.first(where: { $0.uniqueID == id }) else {
+        guard let device = AVCaptureDevice(uniqueID: id) else {
             throw CaptureError.unavailable
         }
         try await mixer.attachVideo(device)
