@@ -66,8 +66,8 @@ final class BrowserOverlayPageTests: XCTestCase {
         let context = try XCTUnwrap(CGContext(data: nil, width: 640, height: 360,
             bitsPerComponent: 8, bytesPerRow: 640 * 4, space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
-        context.translateBy(x: 0, y: 360)
-        context.scaleBy(x: 1, y: -1)
+        // The CGImage bitmap row order already matches the captured image.
+        // A UIKit-style CTM flip here reverses rows before pixel inspection.
         context.draw(image, in: CGRect(x: 0, y: 0, width: 640, height: 360))
         let bytes = try XCTUnwrap(context.data).assumingMemoryBound(to: UInt8.self)
         func pixel(_ x: Int, _ y: Int, _ channel: Int) -> UInt8 { bytes[(y * 640 + x) * 4 + channel] }
