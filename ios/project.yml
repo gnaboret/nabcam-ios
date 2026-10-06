@@ -81,6 +81,7 @@ targets:
       - path: NabcamIOS/OverlayCorner.swift
       - path: NabcamIOS/OverlayPreferencesStore.swift
       - path: NabcamIOS/MixerAudioMonitor.swift
+      - path: NabcamIOS/MicrophonePCMProcessor.swift
       - path: NabcamIOS/MixerFrameMonitor.swift
       - path: NabcamIOS/UploadTransportObserver.swift
       - path: NabcamIOS/PreviewCompositionGrid.swift
