@@ -265,6 +265,10 @@ final class BroadcastModel: ObservableObject {
                 }
                 try await stream.setVideoSettings(VideoEncoderConfiguration.settings(codec: codec, preset: videoPreset, bitrateKbps: bitrateKbps))
                 try await stream.setAudioSettings(AudioCodecSettings(bitRate: audioBitrate.bitsPerSecond, sampleRate: 48_000))
+                // Stop can run while codec configuration suspends. Do not attach
+                // a late output after Stop has already cleared its ownership.
+                try Task.checkCancellation()
+                guard owner == generation else { throw CancellationError() }
                 let output: any MediaMixerOutput
                 if microphoneProcessingEnabled {
                     output = MicrophoneProcessingOutput(destination: stream, gainDB: Double(microphoneGainDB),
