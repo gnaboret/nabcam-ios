@@ -39,6 +39,11 @@ final class BrowserOverlayPageTests: XCTestCase {
         host.attach([page])
         XCTAssertEqual(page.view.bounds.size, CGSize(width: 1280, height: 720))
         XCTAssertTrue(host.bounds.contains(page.view.frame))
+        // Production keeps WebKit behind the camera surface. An opaque sibling
+        // must not make its independent snapshot blank or capture that sibling.
+        let cameraCover = UIView(frame: controller.view.bounds)
+        cameraCover.backgroundColor = .blue
+        controller.view.addSubview(cameraCover)
         page.view.loadHTMLString("""
         <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;background:transparent}#red{position:absolute;left:0;top:0;width:640px;height:360px;background:#ff0000}
