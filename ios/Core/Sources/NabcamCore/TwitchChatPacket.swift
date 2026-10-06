@@ -42,7 +42,7 @@ public enum TwitchChatPacket: Equatable, Sendable {
     /// Parses one complete line. No server error text or credentials are returned.
     public static func parse(_ line: String, channel: String) -> Self? {
         guard line.utf8.count <= 16_384, validLogin(channel),
-              !line.contains("\r"), !line.contains("\n"), !line.contains("\0") else { return nil }
+              !line.utf8.contains(where: { $0 == 13 || $0 == 10 || $0 == 0 }) else { return nil }
         var rest = line[...]
         var tags: [String: String] = [:]
         if rest.first == "@" {
