@@ -53,6 +53,25 @@ final class BroadcastModel: ObservableObject {
     @Published private(set) var browserPreviewMixer: MediaMixer?
     private var browserPreview: BrowserPreviewComposition?
     private var streamBrowser: StreamBrowserOverlays?
+    @Published private(set) var streamChatEnabled = false
+    private var streamChat: StreamChatOverlay?
+    private var chatRasterSize: (width: Int, height: Int) {
+        (videoPreset.width * 42 / 100, videoPreset.height * 35 / 100)
+    }
+
+    func setStreamChatEnabled(_ enabled: Bool) async {
+        guard !isLive, !isBusy, enabled != streamChatEnabled else { return }
+        streamChatEnabled = enabled
+        await restartPreview()
+    }
+
+    func updateStreamChat(messages: [ChatMessage], emotes: [URL: UIImage]) async {
+        guard streamChatEnabled, isReady, let streamChat else { return }
+        let size = chatRasterSize
+        let image = ChatRasterizer.render(messages: messages, emotes: emotes,
+                                         width: size.width, height: size.height)
+        await streamChat.update(image: image)
+    }
     private var session: (any Session)?
     private var publishingOutput: (any MediaMixerOutput)?
     @Published var microphoneProcessingEnabled = false
@@ -115,7 +134,7 @@ final class BroadcastModel: ObservableObject {
             try await mixer.configuration(video: 0) { try $0.setFrameRate(captureFPS) }
             var mixing = await mixer.videoMixerSettings
             let browserConfigurations = browserSources.sources.filter(\.enabled)
-            mixing.mode = (clockEnabled || !watermarks.isEmpty || browserConfigurations.contains { $0.destination != .previewOnly }) ? .offscreen : .passthrough
+            mixing.mode = (streamChatEnabled || clockEnabled || !watermarks.isEmpty || browserConfigurations.contains { $0.destination != .previewOnly }) ? .offscreen : .passthrough
             await mixer.setVideoMixerSettings(mixing)
             if !watermarks.isEmpty {
                 let images = try await StreamWatermarks(configurations: watermarks,
@@ -136,6 +155,13 @@ final class BroadcastModel: ObservableObject {
                 try await browser.install(on: mixer.screen, sources: browserConfigurations,
                                           width: videoPreset.width, height: videoPreset.height)
             }
+            if streamChatEnabled {
+                let chat = await StreamChatOverlay()
+                streamChat = chat
+                let size = chatRasterSize
+                try await chat.install(on: mixer.screen, width: size.width, height: size.height,
+                                       videoWidth: videoPreset.width, videoHeight: videoPreset.height)
+            }
             guard active, !audioInterrupted else { await releaseCapture(); return }
             captureMonitor.reset()
             mixedMonitor.reset()
@@ -144,16 +170,18 @@ final class BroadcastModel: ObservableObject {
             await mixer.addOutput(mixedMonitor)
             await mixer.addOutput(audioMonitor)
             await mixer.startRunning()
-            if !browserConfigurations.isEmpty, let streamBrowser {
+            if !browserConfigurations.isEmpty || streamChatEnabled {
                 let preview = BrowserPreviewComposition()
                 browserPreview = preview
                 try await preview.start(sourceMixer: mixer, preset: videoPreset, watermarks: watermarks,
                                         clockEnabled: clockEnabled, clockCorner: clockCorner, sources: browserConfigurations)
                 guard active, !audioInterrupted else { await releaseCapture(); return }
                 browserPreviewMixer = preview.mixer
-                try browserController.start(sources: browserConfigurations, host: browserHost) { id, image in
-                    await streamBrowser.update(id: id, image: image)
-                    await preview.update(id: id, image: image)
+                if let streamBrowser {
+                    try browserController.start(sources: browserConfigurations, host: browserHost) { id, image in
+                        await streamBrowser.update(id: id, image: image)
+                        await preview.update(id: id, image: image)
+                    }
                 }
             }
             isReady = true
@@ -896,6 +924,8 @@ final class BroadcastModel: ObservableObject {
     }
 
     private func releaseCapture() async {
+        await streamChat?.remove()
+        streamChat = nil
         browserController.stop()
         browserPreviewMixer = nil
         await browserPreview?.stop()

@@ -16,6 +16,7 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
 struct BroadcastView: View {
     @StateObject private var model = BroadcastModel()
     @StateObject private var chat = KickChatService()
+    @StateObject private var chatEmotes = ChatEmoteCache()
     @StateObject private var connections = ConnectionProfiles()
     @Environment(\.scenePhase) private var scenePhase
     @State private var showSettings = false
@@ -87,6 +88,18 @@ struct BroadcastView: View {
             }.padding(20)
         }
         .task { connections.load(); await model.setActive(true) }
+        .task(id: model.streamChatEnabled && model.isReady) {
+            guard model.streamChatEnabled, model.isReady else {
+                chatEmotes.stop()
+                return
+            }
+            while !Task.isCancelled {
+                let messages = chat.isEnabled ? chat.messages : []
+                chatEmotes.update(messages: messages)
+                await model.updateStreamChat(messages: messages, emotes: chatEmotes.images)
+                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.interruptionNotification)
             .receive(on: DispatchQueue.main)) { notification in
             guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
@@ -273,7 +286,12 @@ struct BroadcastView: View {
                             else { chat.connect(channel: chatChannel) }
                         }
                         Text(chat.status).font(.caption).foregroundStyle(.secondary)
-                        Text("Preview chat only—it is not embedded in the outgoing video yet. Chat disconnects when you leave the app.").font(.caption)
+                        Toggle("Include chat in stream · experimental", isOn: Binding(
+                            get: { model.streamChatEnabled },
+                            set: { enabled in Task { await model.setStreamChatEnabled(enabled) } }))
+                            .disabled(model.isLive || model.isBusy)
+                            .accessibilityIdentifier("stream-chat-toggle")
+                        Text("Adds chat at the bottom left of your broadcast. Change before going live. Chat disconnects when you leave the app.").font(.caption)
                     }
                     Section("Stream overlays") {
                         ForEach(Array(model.watermarks.enumerated()), id: \.element.id) { index, watermark in
