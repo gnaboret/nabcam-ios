@@ -16,9 +16,15 @@ final class StreamChatService: ObservableObject {
     private var twitchSocket: (any TwitchChatSocket)?
     private var twitchAuthors: [String: String] = [:]
     private let makeTwitchSocket: @MainActor () -> any TwitchChatSocket
+    private let validateTwitchToken: @MainActor (TwitchChatLogin) async throws -> Void
+    private let tokenValidationInterval: Duration
 
-    init(makeTwitchSocket: @escaping @MainActor () -> any TwitchChatSocket = { NativeTwitchChatSocket() }) {
+    init(makeTwitchSocket: @escaping @MainActor () -> any TwitchChatSocket = { NativeTwitchChatSocket() },
+         validateTwitchToken: @escaping @MainActor (TwitchChatLogin) async throws -> Void = { try await TwitchTokenValidator.validate($0) },
+         tokenValidationInterval: Duration = .seconds(3600)) {
         self.makeTwitchSocket = makeTwitchSocket
+        self.validateTwitchToken = validateTwitchToken
+        self.tokenValidationInterval = tokenValidationInterval
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 25
@@ -119,6 +125,11 @@ final class StreamChatService: ObservableObject {
     }
 
     private func runTwitch(_ login: TwitchChatLogin, token: UUID) async throws {
+        status = "Checking Twitch login…"
+        do { try await validateTwitchToken(login) }
+        catch TwitchTokenValidation.Failure.rejected { throw TwitchFailure.authentication }
+        try Task.checkCancellation()
+        guard token == owner else { throw CancellationError() }
         let connection = makeTwitchSocket()
         twitchSocket = connection
         connection.resume()
@@ -127,8 +138,27 @@ final class StreamChatService: ObservableObject {
             do { try await Task.sleep(for: .seconds(20)) } catch { return }
             connection.cancel()
         }
+        var tokenRejected = false
+        var validationFailed = false
+        let validation = Task {
+            do {
+                while !Task.isCancelled, token == owner {
+                    try await Task.sleep(for: tokenValidationInterval)
+                    try Task.checkCancellation()
+                    try await validateTwitchToken(login)
+                }
+            } catch is CancellationError { return }
+            catch {
+                guard token == owner, !Task.isCancelled else { return }
+                validationFailed = true
+                if case TwitchTokenValidation.Failure.rejected = error { tokenRejected = true }
+                // A network failure also closes the session; reconnect validates
+                // again before any authentication credentials are sent to IRC.
+                connection.cancel()
+            }
+        }
         defer {
-            timeout.cancel(); connection.cancel()
+            timeout.cancel(); validation.cancel(); connection.cancel()
             if token == owner { twitchSocket = nil }
         }
         try await connection.send("PASS oauth:\(login.token)\r\n")
@@ -137,7 +167,13 @@ final class StreamChatService: ObservableObject {
         var decoder = TwitchIRCDecoder()
         var joinedRequested = false
         while !Task.isCancelled, token == owner {
-            let bytes = try await connection.receive()
+            let bytes: Data
+            do { bytes = try await connection.receive() }
+            catch {
+                if tokenRejected { throw TwitchFailure.authentication }
+                if validationFailed { throw TwitchFailure.reconnect }
+                throw error
+            }
             try Task.checkCancellation()
             guard token == owner else { return }
             for line in try decoder.append(bytes) {

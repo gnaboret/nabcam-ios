@@ -45,7 +45,7 @@ final class TwitchChatServiceTests: XCTestCase {
 
     func testHandshakePingMessageAndModeration() async throws {
         let socket = FakeTwitchSocket()
-        let service = StreamChatService(makeTwitchSocket: { socket })
+        let service = StreamChatService(makeTwitchSocket: { socket }, validateTwitchToken: { _ in })
         service.connectTwitch(try login())
         defer { service.disconnect() }
         await until { socket.sent.count == 3 }
@@ -69,7 +69,7 @@ final class TwitchChatServiceTests: XCTestCase {
 
     func testRejectedLoginStopsAndDoesNotExposeToken() async throws {
         let socket = FakeTwitchSocket()
-        let service = StreamChatService(makeTwitchSocket: { socket })
+        let service = StreamChatService(makeTwitchSocket: { socket }, validateTwitchToken: { _ in })
         service.connectTwitch(try login())
         await until { socket.sent.count == 3 }
         socket.feed(":server NOTICE * :Login authentication failed\r\n")
@@ -87,7 +87,7 @@ final class TwitchChatServiceTests: XCTestCase {
         let service = StreamChatService(makeTwitchSocket: {
             count += 1
             return count == 1 ? first : second
-        })
+        }, validateTwitchToken: { _ in })
         service.connectTwitch(try login())
         await until { first.sent.count == 3 }
         service.disconnect()
@@ -100,5 +100,47 @@ final class TwitchChatServiceTests: XCTestCase {
         await until { service.isConnected }
         XCTAssertTrue(service.isEnabled)
         XCTAssertEqual(service.status, "Twitch chat · #room")
+    }
+
+    func testInvalidTokenIsRejectedBeforeOpeningSocket() async throws {
+        var opened = false
+        let service = StreamChatService(makeTwitchSocket: { opened = true; return FakeTwitchSocket() },
+            validateTwitchToken: { _ in throw TwitchTokenValidation.Failure.rejected })
+        service.connectTwitch(try login())
+        await until { !service.isEnabled }
+        XCTAssertFalse(opened)
+        XCTAssertFalse(service.isConnected)
+        XCTAssertFalse(service.status.contains("synthetic-only"))
+        service.disconnect()
+    }
+
+    func testPeriodicValidationRevocationClosesSession() async throws {
+        let socket = FakeTwitchSocket()
+        var validations = 0
+        let service = StreamChatService(makeTwitchSocket: { socket }, validateTwitchToken: { _ in
+            validations += 1
+            if validations > 1 { throw TwitchTokenValidation.Failure.rejected }
+        }, tokenValidationInterval: .milliseconds(50))
+        service.connectTwitch(try login())
+        await until { !service.isEnabled }
+        XCTAssertEqual(validations, 2)
+        XCTAssertTrue(socket.canceled)
+        XCTAssertFalse(service.isConnected)
+        service.disconnect()
+    }
+
+    func testPeriodicValidationNetworkFailureEntersRetryState() async throws {
+        let socket = FakeTwitchSocket()
+        var validations = 0
+        let service = StreamChatService(makeTwitchSocket: { socket }, validateTwitchToken: { _ in
+            validations += 1
+            if validations > 1 { throw URLError(.notConnectedToInternet) }
+        }, tokenValidationInterval: .milliseconds(50))
+        service.connectTwitch(try login())
+        await until { service.status.contains("retry in") }
+        XCTAssertTrue(service.isEnabled)
+        XCTAssertTrue(socket.canceled)
+        XCTAssertFalse(service.isConnected)
+        service.disconnect()
     }
 }

@@ -73,6 +73,7 @@ targets:
       - path: NabcamIOS/ConnectionProfiles.swift
       - path: NabcamIOS/TwitchLoginStore.swift
       - path: NabcamIOS/TwitchChatSocket.swift
+      - path: NabcamIOS/TwitchTokenValidator.swift
       - path: NabcamIOS/StreamChatService.swift
       - path: NabcamIOS/BrowserOverlaySources.swift
       - path: NabcamIOS/BrowserOverlayPage.swift
