@@ -54,6 +54,10 @@ final class BroadcastModel: ObservableObject {
     private var browserPreview: BrowserPreviewComposition?
     private var streamBrowser: StreamBrowserOverlays?
     private var session: (any Session)?
+    private var publishingOutput: (any MediaMixerOutput)?
+    @Published var microphoneProcessingEnabled = false
+    @Published var microphoneGainDB = 0
+    @Published var microphoneLimiterEnabled = true
     // Keep the SRT runtime/stream alive across Start and Stop. The session resets
     // its socket and credentials between attempts, without global runtime churn.
     private lazy var srtPublishingSession = SrtPublishSession()
@@ -195,6 +199,7 @@ final class BroadcastModel: ObservableObject {
         diagnostics.append(.audioEncoderRequested(audioBitrate))
         connectionTask = Task {
             var candidate: (any Session)?
+            var candidateOutput: (any MediaMixerOutput)?
             var candidateRelay: SrtlaControlSession?
             do {
                 try Task.checkCancellation()
@@ -232,7 +237,20 @@ final class BroadcastModel: ObservableObject {
                 }
                 try await stream.setVideoSettings(VideoEncoderConfiguration.settings(codec: codec, preset: videoPreset, bitrateKbps: bitrateKbps))
                 try await stream.setAudioSettings(AudioCodecSettings(bitRate: audioBitrate.bitsPerSecond, sampleRate: 48_000))
-                await mixer.addOutput(stream)
+                let output: any MediaMixerOutput
+                if microphoneProcessingEnabled {
+                    output = MicrophoneProcessingOutput(destination: stream, gainDB: Double(microphoneGainDB),
+                        limiterEnabled: microphoneLimiterEnabled) { [weak self] in
+                        Task { @MainActor in
+                            guard let self, self.generation == owner else { return }
+                            await self.stop()
+                            self.errorMessage = "Microphone processing could not handle this audio format. Turn it off in Audio settings and retry."
+                        }
+                    }
+                } else { output = stream }
+                candidateOutput = output
+                publishingOutput = output
+                await mixer.addOutput(output)
                 try Task.checkCancellation()
                 try await next.connect { [weak self] in
                     Task { @MainActor in
@@ -244,7 +262,7 @@ final class BroadcastModel: ObservableObject {
                 }
                 guard owner == generation, !Task.isCancelled else {
                     candidateRelay?.close()
-                    await mixer.removeOutput(stream)
+                    await mixer.removeOutput(output)
                     try? await next.close()
                     return
                 }
@@ -259,7 +277,7 @@ final class BroadcastModel: ObservableObject {
             } catch {
                 candidateRelay?.close()
                 if let candidate {
-                    await mixer.removeOutput(candidate.stream)
+                    if let candidateOutput { await mixer.removeOutput(candidateOutput) }
                     try? await candidate.close()
                 }
                 guard owner == generation else { return }
@@ -268,6 +286,7 @@ final class BroadcastModel: ObservableObject {
                 relayPathStatus = nil
                 relayTrafficStatus = nil
                 session = nil
+                publishingOutput = nil
                 uploadStatusTask?.cancel(); uploadStatusTask = nil
                 uploadedBytes = nil
                 isBusy = false
@@ -297,6 +316,8 @@ final class BroadcastModel: ObservableObject {
         isLive = false
         let previous = session
         session = nil
+        let previousOutput = publishingOutput
+        publishingOutput = nil
         uploadStatusTask?.cancel(); uploadStatusTask = nil
         uploadedBytes = nil
         relayStatusTask?.cancel(); relayStatusTask = nil
@@ -304,7 +325,7 @@ final class BroadcastModel: ObservableObject {
         relayPathStatus = nil
         relayTrafficStatus = nil
         if let previous {
-            await mixer.removeOutput(previous.stream)
+            if let previousOutput { await mixer.removeOutput(previousOutput) }
             try? await previous.close()
         }
         let cameraOutcome = await cameraSwitch.cancelAndWait()
