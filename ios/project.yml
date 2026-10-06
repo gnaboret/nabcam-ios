@@ -72,6 +72,8 @@ targets:
         excludes: [Simulator.entitlements]
       - path: NabcamIOS/ConnectionProfiles.swift
       - path: NabcamIOS/TwitchLoginStore.swift
+      - path: NabcamIOS/TwitchChatSocket.swift
+      - path: NabcamIOS/StreamChatService.swift
       - path: NabcamIOS/BrowserOverlaySources.swift
       - path: NabcamIOS/BrowserOverlayPage.swift
       - path: NabcamIOS/BrowserOverlayHost.swift

@@ -72,4 +72,17 @@ final class TwitchChatTests: XCTestCase {
         XCTAssertEqual(message.text.count, 300)
         XCTAssertEqual(message.colorHex, ChatAppearance.color(sender: "viewer", supplied: nil))
     }
+
+    func testDeletedMessagesCannotReappearFromDuplicatePackets() {
+        var inbox = ChatInbox()
+        let message = ChatMessage(id: "twitch:one", sender: "viewer", text: "hi", color: nil, badgeTypes: [])
+        XCTAssertTrue(inbox.accept(message))
+        inbox.removeMessages(ids: [message.id])
+        XCTAssertTrue(inbox.messages.isEmpty)
+        XCTAssertFalse(inbox.accept(message))
+        let second = ChatMessage(id: "twitch:two", sender: "viewer", text: "hi", color: nil, badgeTypes: [])
+        XCTAssertTrue(inbox.accept(second))
+        inbox.clearMessages()
+        XCTAssertFalse(inbox.accept(second))
+    }
 }

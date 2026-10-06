@@ -34,9 +34,13 @@ final class ChatEmoteCache: ObservableObject {
     }
 
     nonisolated static func allowedURL(_ url: URL) -> Bool {
-        url.scheme == "https" && url.host == "files.kick.com" && url.port == nil &&
-        url.user == nil && url.password == nil && url.query == nil && url.fragment == nil &&
-        url.path.range(of: "^/emotes/[0-9]{1,20}/fullsize$", options: .regularExpression) != nil
+        guard url.scheme == "https", url.port == nil, url.user == nil,
+              url.password == nil, url.query == nil, url.fragment == nil else { return false }
+        if url.host == "files.kick.com" {
+            return url.path.range(of: "^/emotes/[0-9]{1,20}/fullsize$", options: .regularExpression) != nil
+        }
+        return url.host == "static-cdn.jtvnw.net" &&
+            url.path.range(of: "^/emoticons/v2/[A-Za-z0-9_-]{1,100}/static/dark/2\\.0$", options: .regularExpression) != nil
     }
 
     func update(messages: [ChatMessage]) {

@@ -97,6 +97,11 @@ public struct ChatInbox: Sendable {
     private var seen: Set<String> = []
     private var order: [String] = []
     public init() {}
+    public mutating func removeMessages(ids: Set<String>) {
+        messages.removeAll { ids.contains($0.id) }
+        // Retain deduplication so a repeated packet cannot restore deleted chat.
+    }
+    public mutating func clearMessages() { messages.removeAll() }
     @discardableResult public mutating func accept(_ message: ChatMessage) -> Bool {
         guard seen.insert(message.id).inserted else { return false }
         order.append(message.id)

@@ -15,7 +15,8 @@ private enum SettingsPage: String, CaseIterable, Identifiable {
 
 struct BroadcastView: View {
     @StateObject private var model = BroadcastModel()
-    @StateObject private var chat = KickChatService()
+    @StateObject private var chat = StreamChatService()
+    @StateObject private var twitchLogin = TwitchLoginStore()
     @StateObject private var chatEmotes = ChatEmoteCache()
     @StateObject private var connections = ConnectionProfiles()
     @Environment(\.scenePhase) private var scenePhase
@@ -32,6 +33,11 @@ struct BroadcastView: View {
     @AppStorage("stream.videoCodec") private var videoCodec: VideoCodecChoice = .h264
     @AppStorage("stream.audioBitrateKbps") private var audioBitrate: AudioBitrate = .kbps96
     @State private var chatChannel = ""
+    @State private var chatProvider = "kick"
+    @State private var twitchChannel = ""
+    @State private var twitchUsername = ""
+    @State private var twitchToken = ""
+    @State private var chatSetupError: String?
     @State private var importWatermark = false
     @State private var settingsPage: SettingsPage = .hub
     @AppStorage("hub.settingsOnLeft") private var settingsOnLeft = false
@@ -89,7 +95,7 @@ struct BroadcastView: View {
                 .buttonStyle(.borderedProminent).tint(nabGreen).foregroundStyle(.black)
             }.padding(20)
         }
-        .task { connections.load(); await model.setActive(true) }
+        .task { connections.load(); loadTwitchLogin(); await model.setActive(true) }
         .task(id: model.streamChatEnabled && model.isReady) {
             guard model.streamChatEnabled, model.isReady else {
                 chatEmotes.stop()
@@ -289,12 +295,39 @@ struct BroadcastView: View {
                     }
                     if settingsPage == .overlay {
                     Section("Chat") {
-                        TextField("Kick channel name", text: $chatChannel)
-                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        Picker("Chat service", selection: $chatProvider) {
+                            Text("Kick").tag("kick")
+                            Text("Twitch").tag("twitch")
+                        }.accessibilityIdentifier("chat-provider-picker")
+                            .onChange(of: chatProvider) { _ in chat.disconnect(); chatSetupError = nil }
+                        if chatProvider == "kick" {
+                            TextField("Kick channel name", text: $chatChannel)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        } else {
+                            TextField("Twitch channel name", text: $twitchChannel)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            TextField("Twitch username", text: $twitchUsername)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            SecureField("Twitch chat token", text: $twitchToken)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            Text("Use a user token with chat:read for this username. Read-only chat; login is saved in this device’s Keychain. Switching service disconnects chat.")
+                                .font(.caption).foregroundStyle(nabPurple)
+                            if let error = twitchLogin.errorMessage {
+                                Text(error).font(.caption).foregroundStyle(.red)
+                                Button("Retry loading Twitch login") { loadTwitchLogin() }
+                            }
+                            Button("Forget saved Twitch login", role: .destructive) {
+                                chat.disconnect()
+                                if twitchLogin.forget() {
+                                    twitchToken = ""; twitchUsername = ""; twitchChannel = ""
+                                }
+                            }.disabled(!twitchLogin.canWrite)
+                        }
                         Button(chat.isEnabled ? "Disconnect chat" : "Connect chat") {
                             if chat.isEnabled { chat.disconnect() }
-                            else { chat.connect(channel: chatChannel) }
+                            else { connectSelectedChat() }
                         }
+                        if let chatSetupError { Text(chatSetupError).font(.caption).foregroundStyle(.red) }
                         Text(chat.status).font(.caption).foregroundStyle(.secondary)
                         Toggle("Include chat in stream · experimental", isOn: Binding(
                             get: { model.streamChatEnabled },
@@ -353,7 +386,7 @@ struct BroadcastView: View {
                     Section("About this iOS build") {
                         NavigationLink("Open-source acknowledgments") { AcknowledgmentsView() }
                         Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
-                        Text("SRTLA and browser overlays are experimental and need device testing. Dual-SIM bonding, USB cameras, Twitch chat, purchases and background broadcasting are not included yet. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
+                        Text("SRTLA and browser overlays are experimental and need device testing. Dual-SIM bonding, USB cameras, purchases and background broadcasting are not included yet. Twitch chat requires a user token; automatic sign-in is not included. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
                         Button("Restart camera preview") { Task { await model.restartPreview() } }
                             .disabled(model.isLive || model.isBusy)
                     }
@@ -393,6 +426,26 @@ struct BroadcastView: View {
         .alert("GNAB CAM IRL", isPresented: Binding(get: { model.errorMessage != nil }, set: { if !$0 { model.errorMessage = nil } })) {
             Button("OK") { model.errorMessage = nil }
         } message: { Text(model.errorMessage ?? "") }
+    }
+
+    private func loadTwitchLogin() {
+        twitchLogin.load()
+        if let login = twitchLogin.login {
+            twitchChannel = login.channel; twitchUsername = login.username; twitchToken = login.token
+        }
+    }
+
+    private func connectSelectedChat() {
+        chatSetupError = nil
+        if chatProvider == "kick" { chat.connect(channel: chatChannel); return }
+        do {
+            let login = try TwitchChatLogin(channel: twitchChannel, username: twitchUsername, token: twitchToken)
+            guard twitchLogin.save(login) else {
+                chatSetupError = "Load or unlock your saved Twitch login before connecting."
+                return
+            }
+            chat.connectTwitch(login)
+        } catch { chatSetupError = "Enter a Twitch channel, username, and valid chat token." }
     }
 
     private var settingsNavigation: some View {
@@ -448,9 +501,9 @@ struct BroadcastView: View {
             }
             Button(chat.isEnabled ? "CHAT ON" : "CHAT OFF") {
                 if chat.isEnabled { chat.disconnect() }
-                else if chatChannel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                else if (chatProvider == "kick" ? chatChannel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty : twitchChannel.isEmpty || twitchUsername.isEmpty || twitchToken.isEmpty) {
                     settingsPage = .overlay; showSettings = true
-                } else { chat.connect(channel: chatChannel) }
+                } else { connectSelectedChat() }
             }.accessibilityIdentifier("preview-chat-toggle")
             if model.maximumZoom > model.minimumZoom {
                 HStack {

@@ -3,7 +3,7 @@ import Foundation
 import NabcamCore
 
 @MainActor
-final class KickChatService: ObservableObject {
+final class StreamChatService: ObservableObject {
     @Published private(set) var messages: [ChatMessage] = []
     @Published private(set) var status = "Chat off"
     @Published private(set) var isEnabled = false
@@ -13,8 +13,12 @@ final class KickChatService: ObservableObject {
     private var worker: Task<Void, Never>?
     private var socket: URLSessionWebSocketTask?
     private var inbox = ChatInbox()
+    private var twitchSocket: (any TwitchChatSocket)?
+    private var twitchAuthors: [String: String] = [:]
+    private let makeTwitchSocket: @MainActor () -> any TwitchChatSocket
 
-    init() {
+    init(makeTwitchSocket: @escaping @MainActor () -> any TwitchChatSocket = { NativeTwitchChatSocket() }) {
+        self.makeTwitchSocket = makeTwitchSocket
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.timeoutIntervalForResource = 25
@@ -71,10 +75,113 @@ final class KickChatService: ObservableObject {
         worker = nil
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
+        twitchSocket?.cancel()
+        twitchSocket = nil
         isConnected = false
         isEnabled = false
         status = "Chat off"
     }
+
+    func connectTwitch(_ login: TwitchChatLogin) {
+        disconnect()
+        inbox = ChatInbox(); messages = []
+        twitchAuthors = [:]
+        isEnabled = true
+        let token = owner
+        worker = Task { [weak self] in
+            guard let self else { return }
+            var retry = 0
+            while !Task.isCancelled, token == owner {
+                do {
+                    try await runTwitch(login, token: token)
+                } catch is CancellationError { return }
+                catch TwitchFailure.authentication {
+                    guard token == owner else { return }
+                    isEnabled = false; isConnected = false
+                    status = "Twitch login rejected · check username and chat token"
+                    return
+                } catch TwitchFailure.unavailable {
+                    guard token == owner else { return }
+                    isEnabled = false; isConnected = false
+                    status = "Twitch chat unavailable · check channel and permissions"
+                    return
+                } catch {
+                    guard !Task.isCancelled, token == owner else { return }
+                    if isConnected { retry = 0 }
+                    isConnected = false
+                    let delay = min(30, 3 * (1 << min(retry, 4)))
+                    retry += 1
+                    status = "Twitch disconnected · retry in \(delay)s"
+                    do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+                }
+            }
+        }
+    }
+
+    private func runTwitch(_ login: TwitchChatLogin, token: UUID) async throws {
+        let connection = makeTwitchSocket()
+        twitchSocket = connection
+        connection.resume()
+        status = "Connecting Twitch · #\(login.channel)"
+        let timeout = Task {
+            do { try await Task.sleep(for: .seconds(20)) } catch { return }
+            connection.cancel()
+        }
+        defer {
+            timeout.cancel(); connection.cancel()
+            if token == owner { twitchSocket = nil }
+        }
+        try await connection.send("PASS oauth:\(login.token)\r\n")
+        try await connection.send("NICK \(login.username)\r\n")
+        try await connection.send("CAP REQ :twitch.tv/tags twitch.tv/commands\r\n")
+        var decoder = TwitchIRCDecoder()
+        var joinedRequested = false
+        while !Task.isCancelled, token == owner {
+            let bytes = try await connection.receive()
+            try Task.checkCancellation()
+            guard token == owner else { return }
+            for line in try decoder.append(bytes) {
+                guard let packet = TwitchChatPacket.parse(line, channel: login.channel) else { continue }
+                switch packet {
+                case .ping(let payload): try await connection.send("PONG :\(payload)\r\n")
+                case .authenticated:
+                    if !joinedRequested {
+                        joinedRequested = true
+                        try await connection.send("JOIN #\(login.channel)\r\n")
+                    }
+                case .joined:
+                    guard joinedRequested else { continue }
+                    timeout.cancel(); isConnected = true
+                    status = "Twitch chat · #\(login.channel)"
+                case .authenticationFailed: throw TwitchFailure.authentication
+                case .channelUnavailable, .capabilityRejected: throw TwitchFailure.unavailable
+                case .reconnect: throw TwitchFailure.reconnect
+                case .message(let message, let author):
+                    guard isConnected else { continue }
+                    if inbox.accept(message) {
+                        twitchAuthors[message.id] = author
+                        let retained = Set(inbox.messages.map(\.id))
+                        twitchAuthors = twitchAuthors.filter { retained.contains($0.key) }
+                        messages = inbox.messages
+                    }
+                case .clearMessage(let id):
+                    inbox.removeMessages(ids: [id]); twitchAuthors.removeValue(forKey: id)
+                    messages = inbox.messages
+                case .clearUser(let author):
+                    let ids = Set(twitchAuthors.filter { $0.value == author }.keys)
+                    inbox.removeMessages(ids: ids)
+                    twitchAuthors = twitchAuthors.filter { !ids.contains($0.key) }
+                    messages = inbox.messages
+                case .clearAll:
+                    inbox.clearMessages(); twitchAuthors.removeAll(); messages = []
+                }
+                try Task.checkCancellation()
+                guard token == owner else { return }
+            }
+        }
+    }
+
+    private enum TwitchFailure: Error { case authentication, unavailable, reconnect }
 
     private func resolve(_ channel: String) async throws -> Int64 {
         let url = URL(string: "https://kick.com/api/v2/channels/\(channel)")!

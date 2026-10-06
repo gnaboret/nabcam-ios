@@ -2,7 +2,7 @@ import NabcamCore
 import SwiftUI
 
 struct ChatOverlayView: View {
-    @ObservedObject var chat: KickChatService
+    @ObservedObject var chat: StreamChatService
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if !chat.isConnected || chat.messages.isEmpty {

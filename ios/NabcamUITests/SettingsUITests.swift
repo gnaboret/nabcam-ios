@@ -245,6 +245,25 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(outgoingChat.isEnabled)
         XCTAssertEqual(outgoingChat.value as? String, "0", "Outgoing chat must be opt-in")
         attach("settings-outgoing-chat", app: app)
+        selectPage("audio", app: app)
+        selectPage("overlay", app: app)
+        let provider = app.buttons["chat-provider-picker"]
+        XCTAssertTrue(provider.waitForExistence(timeout: 5))
+        provider.tap()
+        app.buttons["Twitch"].tap()
+        let twitchToken = app.secureTextFields["Twitch chat token"]
+        for _ in 0..<16 {
+            if fullyVisible(twitchToken, in: app, form: form) { break }
+            scroll(form, toward: twitchToken)
+        }
+        XCTAssertTrue(fullyVisible(twitchToken, in: app, form: form))
+        XCTAssertFalse(app.textFields["Twitch chat token"].exists, "Token entry must be secure")
+        attach("settings-twitch-login-empty", app: app)
+        selectPage("audio", app: app)
+        selectPage("overlay", app: app)
+        provider.tap()
+        app.buttons["Kick"].tap()
+        XCTAssertTrue(app.textFields["Kick channel name"].exists)
         let addWatermark = app.buttons["Add image watermark"]
         for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }
@@ -316,7 +335,7 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertTrue(fullyVisible(video, in: app, form: form))
         video.tap()
-        app.buttons["2500 kbps"].tap()
+        app.buttons["2,500 kbps"].tap()
         selectPage("audio", app: app)
         let audio = app.buttons["audio-bitrate-picker"]
         XCTAssertTrue(audio.waitForExistence(timeout: 5))
@@ -339,7 +358,8 @@ final class SettingsUITests: XCTestCase {
             scroll(form, toward: video)
         }
         XCTAssertTrue(fullyVisible(video, in: app, form: form))
-        XCTAssertTrue(video.label.contains("2500 kbps") || (video.value as? String)?.contains("2500 kbps") == true)
+        XCTAssertTrue(video.label.replacingOccurrences(of: ",", with: "").contains("2500 kbps") ||
+                      (video.value as? String)?.replacingOccurrences(of: ",", with: "").contains("2500 kbps") == true)
         attach("settings-video-rate-after-relaunch", app: app)
         selectPage("audio", app: app)
         XCTAssertTrue(audio.label.contains("128 kbps") || (audio.value as? String)?.contains("128 kbps") == true)
@@ -354,7 +374,7 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertTrue(fullyVisible(video, in: app, form: form))
         video.tap()
-        app.buttons["1600 kbps"].tap()
+        app.buttons["1,600 kbps"].tap()
         app.buttons["Done"].tap()
     }
 
