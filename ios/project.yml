@@ -71,6 +71,7 @@ targets:
       - path: NabcamStorageHost
         excludes: [Simulator.entitlements]
       - path: NabcamIOS/ConnectionProfiles.swift
+      - path: NabcamIOS/BrowserOverlaySources.swift
       - path: NabcamIOS/StreamWatermarks.swift
       - path: NabcamIOS/OverlayCorner.swift
       - path: NabcamIOS/OverlayPreferencesStore.swift
