@@ -8,6 +8,42 @@ import XCTest
 
 @MainActor
 final class BrowserCompositorRenderingTests: XCTestCase {
+    func testChatRasterReachesMixedVideoAndClearsCachedPixels() async throws {
+        let mixer = MediaMixer()
+        let probe = BrowserMixedFrameProbe()
+        let chat = await StreamChatOverlay()
+        try await chat.install(on: mixer.screen, width: 160, height: 100, videoWidth: 640, videoHeight: 360)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let image = try XCTUnwrap(UIGraphicsImageRenderer(size: CGSize(width: 160, height: 100), format: format).image { context in
+            UIColor.red.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 160, height: 100))
+        }.cgImage)
+        await chat.update(image: image)
+        var settings = await mixer.videoMixerSettings
+        settings.mode = .offscreen
+        await mixer.setVideoMixerSettings(settings)
+        try await mixer.setFrameRate(30)
+        await mixer.addOutput(probe)
+        await mixer.startRunning()
+        let visible = await waitForPixel(probe, x: 40, y: 260, red: true)
+        XCTAssertTrue(visible, "Outgoing chat must reach the mixed video at bottom left")
+        XCTAssertFalse(probe.isRed(x: 220, y: 260), "Chat must stay within its bounded width")
+        XCTAssertFalse(probe.isRed(x: 40, y: 40), "Chat must not move to the top of the video")
+        if let rendered = probe.image() {
+            let attachment = XCTAttachment(image: UIImage(cgImage: rendered))
+            attachment.name = "outgoing-chat-compositor-placement"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        await chat.update(image: nil)
+        let cleared = await waitForPixel(probe, x: 40, y: 260, red: false)
+        XCTAssertTrue(cleared, "Disconnecting chat must clear the renderer's cached pixels")
+        await mixer.removeOutput(probe)
+        await mixer.stopRunning()
+        await chat.remove()
+    }
+
     func testActualMixedPixelsRespectRoutingSizeAndClear() async throws {
         let mixer = MediaMixer()
         let probe = BrowserMixedFrameProbe()
