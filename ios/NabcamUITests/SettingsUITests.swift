@@ -337,6 +337,8 @@ final class SettingsUITests: XCTestCase {
 
     private func setSwitch(_ row: XCUIElement, to value: String, app: XCUIApplication, name: String = "srtla") {
         XCTAssertTrue(row.isEnabled)
+        let originalValue = row.value as? String
+        XCTAssertNotEqual(originalValue, value, "The test must exercise a real setting change")
         // SwiftUI exposes both a full-width labelled switch row and the actual
         // trailing UISwitch. Tapping the row's centre may hit only its label.
         let control = row.switches.firstMatch
@@ -345,8 +347,17 @@ final class SettingsUITests: XCTestCase {
         let changed = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: row)
         // Loaded hosted simulators can take several seconds to publish the new
         // accessibility snapshot even when the visible switch already changed.
-        // Still require the requested value; never retry by blindly toggling it.
-        let result = XCTWaiter.wait(for: [changed], timeout: 20)
+        // iPad recordings show occasional synthesized taps leave the control
+        // unchanged. Retry once at its centre only after confirming the original
+        // state; never blindly toggle a control that already changed.
+        var result = XCTWaiter.wait(for: [changed], timeout: 20)
+        if result != .completed, row.value as? String == originalValue,
+           originalValue != value, control.exists, control.isHittable {
+            attach("settings-\(name)-unchanged-before-retry", app: app)
+            control.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            let retried = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: row)
+            result = XCTWaiter.wait(for: [retried], timeout: 20)
+        }
         attach("settings-\(name)-after-toggle-\(value)", app: app)
         XCTAssertEqual(result, .completed)
         XCTAssertEqual(row.value as? String, value)
