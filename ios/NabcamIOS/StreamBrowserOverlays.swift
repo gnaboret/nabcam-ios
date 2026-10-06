@@ -43,16 +43,23 @@ final class StreamBrowserOverlays {
     /// work to one frame per source. A failed page clears its stale image.
     func update(id: Int, image: CGImage?) {
         guard let entry = entries[id] else { return }
-        guard let image else { entry.object.cgImage = nil; return }
-        guard image.width <= 640, image.height <= 640,
-              let context = CGContext(data: nil, width: image.width, height: image.height,
+        let width = max(1, Int(entry.rectangle.width.rounded()))
+        let height = max(1, Int(entry.rectangle.height.rounded()))
+        guard let context = CGContext(data: nil, width: width, height: height,
                 bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
                 bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
-            entry.object.cgImage = nil
+            remove()
             return
         }
-        context.setAlpha(CGFloat(entry.source.opacityPercent) / 100)
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        // HaishinKit positions but does not scale ImageScreenObject pixels.
+        // Rasterize to the destination size just as the watermark path does.
+        if let image, image.width <= 640, image.height <= 640 {
+            context.interpolationQuality = .high
+            context.setAlpha(CGFloat(entry.source.opacityPercent) / 100)
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        }
+        // Use an explicit transparent raster when clearing. A nil image leaves
+        // the pinned renderer's cached image intact and can display stale data.
         entry.object.cgImage = context.makeImage()
     }
 
