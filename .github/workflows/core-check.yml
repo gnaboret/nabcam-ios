@@ -8,7 +8,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v5
-      - name: Test platform-independent streaming models
-        working-directory: ios/Core
-        run: swift test
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - name: Test platform-independent streaming and audio logic
+        run: swift test --package-path ios/Core
