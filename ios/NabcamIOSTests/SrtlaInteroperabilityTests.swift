@@ -157,11 +157,27 @@ final class SrtlaInteroperabilityTests: XCTestCase {
                 try await Task.sleep(for: .milliseconds(21))
             }
             let minimumReceived = blackholeOnePath ? max(14, packetsBeforeLinkLoss + 7) : 14
+            let drainClock = ContinuousClock()
+            var lastArrival = drainClock.now
+            var previousPacketCount = server.snapshot().transportPackets
+            var receiverSettled = false
             for _ in 0..<100 {
                 let snapshot = server.snapshot()
+                if snapshot.transportPackets != previousPacketCount {
+                    previousPacketCount = snapshot.transportPackets
+                    lastArrival = drainClock.now
+                }
+                // A minimum PES count proves delivery, not that the recorder has
+                // collected the remaining encoder/socket work. Keep collecting
+                // until one second without arrivals, bounded by the same 5s wait.
+                // The independent decoder still requires the full recovery span.
                 if snapshot.transportPackets >= minimumReceived,
                    !videoFormatChange || (snapshot.videoPES >= beforeFormatChange.videoPES + 10 &&
-                                          snapshot.audioPES >= beforeFormatChange.audioPES + 10) { break }
+                                          snapshot.audioPES >= beforeFormatChange.audioPES + 10 &&
+                                          lastArrival.duration(to: drainClock.now) >= .seconds(1)) {
+                    receiverSettled = true
+                    break
+                }
                 try await Task.sleep(for: .milliseconds(50))
             }
             let received = server.snapshot()
@@ -169,6 +185,7 @@ final class SrtlaInteroperabilityTests: XCTestCase {
             XCTAssertEqual(received.streamID, streamID)
             XCTAssertGreaterThanOrEqual(received.transportPackets, 14)
             if videoFormatChange {
+                XCTAssertTrue(receiverSettled, "Synthetic receiver did not finish draining within five seconds")
                 XCTAssertGreaterThanOrEqual(received.videoPES - beforeFormatChange.videoPES, 10)
                 XCTAssertGreaterThanOrEqual(received.audioPES - beforeFormatChange.audioPES, 10)
             }
