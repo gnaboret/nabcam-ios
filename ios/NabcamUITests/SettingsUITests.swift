@@ -226,7 +226,7 @@ final class SettingsUITests: XCTestCase {
         }
         XCTAssertTrue(fullyVisible(processing, in: app, form: form))
         XCTAssertEqual(processing.value as? String, "0")
-        processing.tap()
+        setSwitch(processing, to: "1", app: app, name: "microphone-processing")
         let gain = app.steppers["microphone-gain-stepper"]
         for _ in 0..<24 {
             if fullyVisible(gain, in: app, form: form) { break }
