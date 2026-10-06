@@ -14,7 +14,8 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
         self.text = String(text.prefix(300))
         colorHex = ChatAppearance.color(sender: sender, supplied: color)
         badges = ChatAppearance.badges(badgeTypes)
-        fragments = twitchEmotes.map { ChatFragment.twitch(self.text, tags: $0) } ?? ChatFragment.kick(self.text)
+        if let twitchEmotes { fragments = ChatFragment.twitch(self.text, tags: twitchEmotes) }
+        else { fragments = ChatFragment.kick(self.text) }
     }
 
     public var spokenText: String {
