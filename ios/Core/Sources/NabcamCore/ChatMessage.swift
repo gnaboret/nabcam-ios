@@ -8,13 +8,13 @@ public struct ChatMessage: Identifiable, Equatable, Sendable {
     public let badges: [String]
     public let fragments: [ChatFragment]
 
-    public init(id: String, sender: String, text: String, color: String?, badgeTypes: [String]) {
+    public init(id: String, sender: String, text: String, color: String?, badgeTypes: [String], twitchEmotes: String? = nil) {
         self.id = id
         self.sender = String(sender.prefix(40))
         self.text = String(text.prefix(300))
         colorHex = ChatAppearance.color(sender: sender, supplied: color)
         badges = ChatAppearance.badges(badgeTypes)
-        fragments = ChatFragment.kick(self.text)
+        fragments = twitchEmotes.map { ChatFragment.twitch(self.text, tags: $0) } ?? ChatFragment.kick(self.text)
     }
 
     public var spokenText: String {
