@@ -23,6 +23,7 @@ final class BroadcastModel: ObservableObject {
         let name: String
         let front: Bool
         let wide: Bool
+        let lens: CameraLensKind
     }
     private var cameraSelection: [CameraSelection] {
         cameras.map { CameraSelection(id: $0.id, front: $0.front, wide: $0.wide) }
@@ -38,15 +39,24 @@ final class BroadcastModel: ObservableObject {
             .sorted { $0.uniqueID < $1.uniqueID }
         cameras = devices.map { device in
             let side = device.position == .front ? "Front" : "Rear"
-            let lens: String
+            let lens: CameraLensKind
             switch device.deviceType {
-            case .builtInUltraWideCamera: lens = "ultra wide"
-            case .builtInTelephotoCamera: lens = "telephoto"
-            case .builtInTrueDepthCamera: lens = "TrueDepth"
-            default: lens = "wide"
+            case .builtInUltraWideCamera: lens = .ultraWide
+            case .builtInTelephotoCamera: lens = .telephoto
+            case .builtInTrueDepthCamera: lens = .trueDepth
+            default: lens = .wide
             }
-            return CameraChoice(id: device.uniqueID, name: "\(side) · \(lens)", front: device.position == .front,
-                                wide: device.deviceType == .builtInWideAngleCamera)
+            let modes = VideoPreset.allCases.filter { preset in
+                device.formats.contains { format in
+                    let size = CMVideoFormatDescriptionGetDimensions(format.formatDescription)
+                    return size.width >= preset.width && size.height >= preset.height &&
+                        format.videoSupportedFrameRateRanges.contains { $0.minFrameRate <= preset.fps && preset.fps <= $0.maxFrameRate }
+                }
+            }
+            diagnostics.append(.cameraAvailable(front: device.position == .front, lens: lens, advertised: modes))
+            let name = lens == .ultraWide ? "ultra wide" : lens == .trueDepth ? "TrueDepth" : lens.rawValue
+            return CameraChoice(id: device.uniqueID, name: "\(side) · \(name)", front: device.position == .front,
+                                wide: device.deviceType == .builtInWideAngleCamera, lens: lens)
         }
         selectedCameraID = CameraSelection.initial(in: cameraSelection, keeping: selectedCameraID)
     }
@@ -222,6 +232,7 @@ final class BroadcastModel: ObservableObject {
             }
             isReady = true
             diagnostics.append(.captureReady)
+            recordAttachedLens()
             startClockUpdates()
             startFrameStatistics()
             startAudioMeter()
@@ -512,6 +523,9 @@ final class BroadcastModel: ObservableObject {
                 $0.minFrameRate <= preset.fps && preset.fps <= $0.maxFrameRate
             }
         }) else {
+            if let choice = cameras.first(where: { $0.id == id }) {
+                diagnostics.append(.cameraModeRejected(front: choice.front, lens: choice.lens, requested: preset))
+            }
             errorMessage = "The other camera does not advertise \(preset.label). Your current camera was kept. Choose a lower mode before broadcasting."
             return
         }
@@ -534,8 +548,10 @@ final class BroadcastModel: ObservableObject {
         switch result {
         case .changed:
             diagnostics.append(.cameraChanged(front: isFront))
+            recordAttachedLens()
         case .restored:
             diagnostics.append(.cameraSwitchRestored)
+            recordAttachedLens()
             errorMessage = "The other camera could not use \(preset.label). The previous camera was restored."
         case .unavailable:
             diagnostics.append(.cameraSwitchFailed)
@@ -566,6 +582,11 @@ final class BroadcastModel: ObservableObject {
             } else if mirrored { throw CaptureError.unavailable }
         }
         try await mixer.setFrameRate(fps)
+    }
+
+    private func recordAttachedLens() {
+        guard let choice = cameras.first(where: { $0.id == selectedCameraID }) else { return }
+        diagnostics.append(.cameraLensAttached(front: choice.front, lens: choice.lens))
     }
 
     func setFrontCameraMirrored(_ enabled: Bool) async {

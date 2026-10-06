@@ -1,6 +1,7 @@
 import Foundation
 
 public enum RelayLinkKind: String, Sendable { case wifi = "Wi-Fi", cellular = "Cellular", automatic = "Network" }
+public enum CameraLensKind: String, Sendable { case wide, ultraWide, telephoto, trueDepth }
 
 /// Deliberately accepts no arbitrary strings, URLs, errors, or chat payloads.
 public enum StreamDiagnosticEvent: Sendable {
@@ -10,6 +11,9 @@ public enum StreamDiagnosticEvent: Sendable {
     case audioEncoderRequested(AudioBitrate)
     case captureActive(Bool), cameraChanged(front: Bool), microphoneMuted(Bool)
     case cameraSwitchStarted(front: Bool, live: Bool), cameraSwitchRestored, cameraSwitchFailed
+    case cameraAvailable(front: Bool, lens: CameraLensKind, advertised: [VideoPreset])
+    case cameraLensAttached(front: Bool, lens: CameraLensKind)
+    case cameraModeRejected(front: Bool, lens: CameraLensKind, requested: VideoPreset)
     case mirrorFront(Bool), clockEnabled(Bool), videoPreset(VideoPreset)
     case focusLocked(Bool), exposureLocked(Bool)
     case audioInterruption(began: Bool)
@@ -33,6 +37,12 @@ public enum StreamDiagnosticEvent: Sendable {
         case .stopped: "Publish stopped"
         case .captureActive(let active): "Capture lifecycle requested: \(active ? "active" : "inactive")"
         case .cameraChanged(let front): "Camera attached: \(front ? "front" : "rear")"
+        case .cameraAvailable(let front, let lens, let modes):
+            "Camera discovered: \(front ? "front" : "rear") \(lens.rawValue); advertised modes: \(modes.map(\.label).joined(separator: ", ")); not measured delivery"
+        case .cameraLensAttached(let front, let lens):
+            "Camera lens attached: \(front ? "front" : "rear") \(lens.rawValue); waiting for measured FPS"
+        case .cameraModeRejected(let front, let lens, let mode):
+            "Camera change rejected before attachment: \(front ? "front" : "rear") \(lens.rawValue) does not advertise \(mode.label); current camera kept"
         case .cameraSwitchStarted(let front, let live): "Camera change requested: \(front ? "front" : "rear"); live \(live)"
         case .cameraSwitchRestored: "Camera change failed; previous camera restored without restarting transport"
         case .cameraSwitchFailed: "Camera change and rollback failed; stopping capture and publish"
