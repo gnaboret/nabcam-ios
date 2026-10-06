@@ -28,7 +28,9 @@ final class PreviewVideoBridgeTests: XCTestCase {
         // would still reach this observer and increment its count.
         for _ in 0..<100 { bridge.mixer(destination, didOutput: frame) }
         try await Task.sleep(for: .milliseconds(100))
-        XCTAssertEqual(monitor.snapshot()?.frames, 1)
+        // snapshot() reports and resets an interval, not a lifetime total.
+        // The prior assertion consumed the first frame; none may follow stop.
+        XCTAssertEqual(monitor.snapshot()?.frames, 0)
         await bridge.stop()
         await destination.removeOutput(monitor)
         await destination.stopRunning()
