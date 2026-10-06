@@ -93,10 +93,17 @@ struct BroadcastView: View {
                 chatEmotes.stop()
                 return
             }
+            var previousMessages: [ChatMessage]?
+            var previousEmotes: Set<URL> = []
             while !Task.isCancelled {
-                let messages = chat.isEnabled ? chat.messages : []
+                let messages = chat.isEnabled ? Array(chat.messages.suffix(8)) : []
                 chatEmotes.update(messages: messages)
-                await model.updateStreamChat(messages: messages, emotes: chatEmotes.images)
+                let loadedEmotes = Set(chatEmotes.images.keys)
+                if previousMessages != messages || previousEmotes != loadedEmotes {
+                    await model.updateStreamChat(messages: messages, emotes: chatEmotes.images)
+                    previousMessages = messages
+                    previousEmotes = loadedEmotes
+                }
                 do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
             }
         }

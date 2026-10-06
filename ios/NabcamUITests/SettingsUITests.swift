@@ -236,6 +236,15 @@ final class SettingsUITests: XCTestCase {
         attach("settings-microphone-processing", app: app)
         selectPage("overlay", app: app)
         XCTAssertTrue(app.textFields["Kick channel name"].exists)
+        let outgoingChat = app.switches["stream-chat-toggle"]
+        for _ in 0..<12 {
+            if fullyVisible(outgoingChat, in: app, form: form) { break }
+            scroll(form, toward: outgoingChat)
+        }
+        XCTAssertTrue(fullyVisible(outgoingChat, in: app, form: form))
+        XCTAssertTrue(outgoingChat.isEnabled)
+        XCTAssertEqual(outgoingChat.value as? String, "0", "Outgoing chat must be opt-in")
+        attach("settings-outgoing-chat", app: app)
         let addWatermark = app.buttons["Add image watermark"]
         for attempt in 0..<40 {
             if fullyVisible(addWatermark, in: app, form: form) { break }

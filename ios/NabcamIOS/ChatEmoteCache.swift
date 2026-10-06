@@ -50,9 +50,11 @@ final class ChatEmoteCache: ObservableObject {
         }
         wanted = urls
         let keep = Set(urls)
-        images = images.filter { keep.contains($0.key) }
+        if images.keys.contains(where: { !keep.contains($0) }) {
+            images = images.filter { keep.contains($0.key) }
+        }
         failed.formIntersection(keep)
-        guard worker == nil else { return }
+        guard worker == nil, wanted.contains(where: { images[$0] == nil && !failed.contains($0) }) else { return }
         let owner = generation
         worker = Task { [weak self] in
             guard let self else { return }
