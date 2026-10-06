@@ -302,6 +302,60 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(app.textFields["Kick channel name"].exists,
                       "Chat shortcut should open setup when no channel is configured")
         app.buttons["Done"].tap()
+        verifyBitrateRelaunch(app: app)
+    }
+
+    private func verifyBitrateRelaunch(app: XCUIApplication) {
+        app.buttons["Settings"].tap()
+        selectPage("video", app: app)
+        let form = app.descendants(matching: .any).matching(identifier: "settings-form").firstMatch
+        let video = app.buttons["video-bitrate-picker"]
+        for _ in 0..<12 {
+            if fullyVisible(video, in: app, form: form) { break }
+            scroll(form, toward: video)
+        }
+        XCTAssertTrue(fullyVisible(video, in: app, form: form))
+        video.tap()
+        app.buttons["2500 kbps"].tap()
+        selectPage("audio", app: app)
+        let audio = app.buttons["audio-bitrate-picker"]
+        XCTAssertTrue(audio.waitForExistence(timeout: 5))
+        audio.tap()
+        app.buttons["128 kbps"].tap()
+        app.buttons["Done"].tap()
+        // Terminate the process: dismissing/reopening Settings alone would also
+        // pass with transient @State and would not prove saved preferences.
+        app.terminate()
+        app.launch()
+        let status = app.staticTexts["capture-status"]
+        let settled = NSPredicate(format: "label == %@ OR label BEGINSWITH %@", "Camera unavailable", "Preview · requested")
+        let captureSettled = XCTNSPredicateExpectation(predicate: settled, object: status)
+        XCTAssertEqual(XCTWaiter.wait(for: [captureSettled], timeout: 30), .completed)
+        if app.alerts.buttons["OK"].exists { app.alerts.buttons["OK"].tap() }
+        app.buttons["Settings"].tap()
+        selectPage("video", app: app)
+        for _ in 0..<12 {
+            if fullyVisible(video, in: app, form: form) { break }
+            scroll(form, toward: video)
+        }
+        XCTAssertTrue(fullyVisible(video, in: app, form: form))
+        XCTAssertTrue(video.label.contains("2500 kbps") || (video.value as? String)?.contains("2500 kbps") == true)
+        attach("settings-video-rate-after-relaunch", app: app)
+        selectPage("audio", app: app)
+        XCTAssertTrue(audio.label.contains("128 kbps") || (audio.value as? String)?.contains("128 kbps") == true)
+        attach("settings-audio-rate-after-relaunch", app: app)
+        // Restore defaults so a later test run does not inherit our selections.
+        audio.tap()
+        app.buttons["96 kbps"].tap()
+        selectPage("video", app: app)
+        for _ in 0..<12 {
+            if fullyVisible(video, in: app, form: form) { break }
+            scroll(form, toward: video)
+        }
+        XCTAssertTrue(fullyVisible(video, in: app, form: form))
+        video.tap()
+        app.buttons["1600 kbps"].tap()
+        app.buttons["Done"].tap()
     }
 
     private func selectPage(_ name: String, app: XCUIApplication) {

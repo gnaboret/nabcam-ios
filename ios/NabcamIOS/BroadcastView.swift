@@ -26,9 +26,11 @@ struct BroadcastView: View {
     @State private var confirmDelete = false
     @State private var profileNotice: String?
     @State private var destination = ""
-    @State private var bitrate = 1600
-    @State private var videoCodec: VideoCodecChoice = .h264
-    @State private var audioBitrate: AudioBitrate = .kbps96
+    // These are device-local preferences, not connection credentials. Selecting
+    // a destination or relaunching must not silently reset the requested rates.
+    @AppStorage("stream.targetBitrateKbps") private var bitrate = 1600
+    @AppStorage("stream.videoCodec") private var videoCodec: VideoCodecChoice = .h264
+    @AppStorage("stream.audioBitrateKbps") private var audioBitrate: AudioBitrate = .kbps96
     @State private var chatChannel = ""
     @State private var importWatermark = false
     @State private var settingsPage: SettingsPage = .hub
@@ -256,6 +258,7 @@ struct BroadcastView: View {
                         Picker("Target bitrate", selection: $bitrate) {
                             ForEach([444, 800, 1200, 1600, 2500, 4000, 6000], id: \.self) { Text("\($0) kbps").tag($0) }
                         }.disabled(model.isLive || model.isBusy)
+                            .accessibilityIdentifier("video-bitrate-picker")
                         Text("This selects the requested average rate. The HUD measures camera and compositor output separately—not the receiver’s FPS. Unsupported camera modes show an error. AAC audio; no adaptive controller yet.").font(.caption)
                     }
                     }
