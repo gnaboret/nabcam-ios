@@ -83,6 +83,7 @@ targets:
       - path: NabcamIOS/MixerAudioMonitor.swift
       - path: NabcamIOS/MicrophonePCMProcessor.swift
       - path: NabcamIOS/MicrophoneProcessingOutput.swift
+      - path: NabcamIOS/ChatRasterizer.swift
       - path: NabcamIOS/MixerFrameMonitor.swift
       - path: NabcamIOS/UploadTransportObserver.swift
       - path: NabcamIOS/PreviewCompositionGrid.swift
