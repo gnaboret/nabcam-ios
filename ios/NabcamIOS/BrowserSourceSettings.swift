@@ -11,7 +11,8 @@ struct BrowserSourceSettings: View {
             ForEach(store.sources) { source in
                 NavigationLink("Browser source \(source.id) · \(source.enabled ? "On" : "Off")") {
                     BrowserSourceEditor(store: store, source: source, apply: apply)
-                }.disabled(locked || !store.canWrite)
+                }.accessibilityIdentifier("browser-source-\(source.id)")
+                    .disabled(locked || !store.canWrite)
             }
             Button("Add browser source") { _ = store.add() }
                 .disabled(locked || !store.canWrite || store.sources.count >= 3)
@@ -37,9 +38,11 @@ private struct BrowserSourceEditor: View {
         Form {
             Section {
                 Toggle("Enabled", isOn: $source.enabled)
+                    .accessibilityIdentifier("browser-source-enabled")
                 SecureField("HTTPS widget URL", text: $source.url)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .keyboardType(.URL)
+                    .accessibilityIdentifier("browser-source-url")
                 Text("Widget URLs can contain private tokens. Saved in Keychain, not diagnostics.")
                     .font(.caption).foregroundStyle(.purple)
                 Picker("Show in", selection: $source.destination) {

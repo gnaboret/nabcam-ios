@@ -231,6 +231,18 @@ final class SettingsUITests: XCTestCase {
         XCTAssertTrue(addWatermark.exists)
         XCTAssertTrue(addWatermark.isHittable)
         XCTAssertTrue(fullyVisible(addWatermark, in: app, form: form))
+        let browserSource = app.buttons["browser-source-1"]
+        for _ in 0..<24 {
+            if fullyVisible(browserSource, in: app, form: form) { break }
+            scroll(form, toward: browserSource)
+        }
+        XCTAssertTrue(fullyVisible(browserSource, in: app, form: form))
+        browserSource.tap()
+        XCTAssertTrue(app.navigationBars["Browser source 1"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.secureTextFields["browser-source-url"].exists)
+        XCTAssertEqual(app.switches["browser-source-enabled"].value as? String, "0")
+        attach("settings-browser-source", app: app)
+        app.navigationBars.buttons["Settings"].tap()
         selectPage("advanced", app: app)
         // Visit the first row before scrolling down. On compact phones SwiftUI
         // removes offscreen Form rows from the accessibility tree, so a missing
