@@ -22,7 +22,7 @@ private struct SettingLabel: View {
     }
 }
 
-private struct SettingsHelp: View {
+struct SettingsHelp: View {
     let title: String
     let detail: String
     @State private var presented = false
@@ -194,9 +194,10 @@ struct BroadcastView: View {
                     if settingsPage == .camera {
                     Section("Camera") {
                         cameraMenu
-                        Toggle("Mirror front camera", isOn: Binding(get: { model.mirrorFrontCamera }, set: { value in
+                        Toggle(isOn: Binding(get: { model.mirrorFrontCamera }, set: { value in
                             Task { await model.setFrontCameraMirrored(value) }
-                        })).disabled(!model.isReady || model.isBusy || model.isLive)
+                        })) { SettingLabel(title: "Mirror front camera", hint: "Preview + stream") }
+                            .disabled(!model.isReady || model.isBusy || model.isLive)
                         SettingsHelp(title: "About mirroring", detail: "Matches the selfie preview and outgoing video. Rear camera stays unmirrored. Change before going live.")
                         if model.maximumZoom > model.minimumZoom {
                             LabeledContent("Zoom", value: String(format: "%.1f×", model.zoom))
@@ -207,14 +208,16 @@ struct BroadcastView: View {
                             SettingsHelp(title: "Digital zoom", detail: "Zoom crops the selected camera image and can reduce detail. Use the Camera menu to switch physical lenses.")
                         } else { Text("Zoom is unavailable on this camera.").font(.caption) }
                         if model.canLockFocus {
-                            Toggle("Lock focus", isOn: Binding(get: { model.isFocusLocked }, set: { value in
+                            Toggle(isOn: Binding(get: { model.isFocusLocked }, set: { value in
                                 Task { await model.setFocusLocked(value) }
-                            })).disabled(!model.isReady || model.isBusy)
+                            })) { SettingLabel(title: "Lock focus", hint: "Hold current distance") }
+                                .disabled(!model.isReady || model.isBusy)
                         }
                         if model.canLockExposure {
-                            Toggle("Lock exposure", isOn: Binding(get: { model.isExposureLocked }, set: { value in
+                            Toggle(isOn: Binding(get: { model.isExposureLocked }, set: { value in
                                 Task { await model.setExposureLocked(value) }
-                            })).disabled(!model.isReady || model.isBusy)
+                            })) { SettingLabel(title: "Lock exposure", hint: "Hold current brightness") }
+                                .disabled(!model.isReady || model.isBusy)
                         }
                         if model.hasTorch {
                             Toggle("Flashlight", isOn: Binding(get: { model.isTorchOn }, set: { value in
@@ -328,8 +331,7 @@ struct BroadcastView: View {
                                 .accessibilityIdentifier("microphone-gain-stepper")
                             Toggle("Peak limiter", isOn: $model.microphoneLimiterEnabled)
                                 .disabled(model.isLive || model.isBusy)
-                            Text("Applies gain before encoding; limiter ceiling is −1 dBFS. The HUD meter shows input levels before this stage. Change before going live. Device testing is still needed.")
-                                .font(.caption).foregroundStyle(nabPurple)
+                            SettingsHelp(title: "Gain and limiter", detail: "Applies gain before encoding; limiter ceiling is −1 dBFS. The HUD meter shows input levels before this stage. Change before going live. Device testing is still needed.")
                         }
                     }
                     }
@@ -350,8 +352,7 @@ struct BroadcastView: View {
                                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                             SecureField("Twitch chat token", text: $twitchToken)
                                 .textInputAutocapitalization(.never).autocorrectionDisabled()
-                            Text("Use a user token with chat:read for this username. Read-only chat; login is saved in this device’s Keychain. Switching service disconnects chat.")
-                                .font(.caption).foregroundStyle(nabPurple)
+                            SettingsHelp(title: "Twitch login help", detail: "Use a user token with chat:read for this username. Read-only chat; login is saved in this device’s Keychain. Switching service disconnects chat.")
                             if let error = twitchLogin.errorMessage {
                                 Text(error).font(.caption).foregroundStyle(.red)
                                 Button("Retry loading Twitch login") { loadTwitchLogin() }
@@ -374,7 +375,7 @@ struct BroadcastView: View {
                             set: { enabled in Task { await model.setStreamChatEnabled(enabled) } }))
                             .disabled(model.isLive || model.isBusy)
                             .accessibilityIdentifier("stream-chat-toggle")
-                        Text("Adds chat at the bottom left of your broadcast. Change before going live. Chat disconnects when you leave the app.").font(.caption)
+                        SettingsHelp(title: "Chat placement", detail: "Adds chat at the bottom left of your broadcast. Change before going live. Chat disconnects when you leave the app.")
                     }
                     Section("Stream overlays") {
                         ForEach(Array(model.watermarks.enumerated()), id: \.element.id) { index, watermark in
@@ -398,8 +399,7 @@ struct BroadcastView: View {
                         }
                         Button("Add image watermark") { importWatermark = true }
                             .disabled(model.isLive || model.isBusy || model.watermarks.count >= 3)
-                        Text("Up to 3 PNG/JPEG images, 4 MB each, saved on this phone without cloud backup. Transparent PNGs keep their transparency; tall images are limited to 40% of video height.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        SettingsHelp(title: "Watermark formats and limits", detail: "Up to 3 PNG/JPEG images, 4 MB each, saved on this device without cloud backup. Transparent PNGs keep their transparency; tall images are limited to 40% of video height.")
                         if let message = model.overlayStorageMessage {
                             Text(message).font(.caption).foregroundStyle(.red)
                             Button("Retry loading saved overlays") { Task { await model.retrySavedOverlays() } }
@@ -415,8 +415,7 @@ struct BroadcastView: View {
                                 ForEach(ClockCorner.allCases) { Text($0.rawValue).tag($0) }
                             }.disabled(model.isLive || model.isBusy)
                         }
-                        Text("Local time in preview and outgoing video. Change before going live; preview restarts. Compositing performance still needs iPhone testing.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        SettingsHelp(title: "About the clock", detail: "Local time in preview and outgoing video. Change before going live; preview restarts. Compositing performance still needs iPhone testing.")
                     }
                     BrowserSourceSettings(store: model.browserSources, locked: model.isLive || model.isBusy) {
                         await model.restartPreview()
@@ -425,16 +424,16 @@ struct BroadcastView: View {
                     if settingsPage == .advanced {
                     Section("About this iOS build") {
                         NavigationLink("Open-source acknowledgments") { AcknowledgmentsView() }
-                        Text("Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.").font(.caption)
-                        Text("SRTLA and browser overlays are experimental and need device testing. Dual-SIM bonding, USB cameras, purchases and background broadcasting are not included yet. Twitch chat requires a user token; automatic sign-in is not included. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-iPhone testing.").font(.caption)
+                        LabeledContent("Background broadcasting", value: "Not supported")
+                        SettingsHelp(title: "Calls and interruptions", detail: "Calls and other microphone interruptions stop the stream. Preview resumes when available; tap Start to go live again.")
+                        SettingsHelp(title: "Current testing limitations", detail: "SRTLA and browser overlays are experimental and need device testing. Dual-SIM bonding, USB cameras and purchases are not included yet. Twitch chat requires a user token; automatic sign-in is not included. Live camera switching keeps the transport running, but switching gaps and A/V sync still need real-device testing.")
                         Button("Restart camera preview") { Task { await model.restartPreview() } }
                             .disabled(model.isLive || model.isBusy)
                     }
                     Section("Diagnostics") {
                         ShareLink("Share diagnostic timeline", item: model.diagnosticReport)
                         Button("Clear diagnostic timeline", role: .destructive) { model.clearDiagnostics() }
-                        Text("Last 300 events: FPS, frame gaps and SRTLA queues, local send rates, retries and relay ACK timing. No stream keys or chat contents. Local sends do not prove receiver delivery or audio sync.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        SettingsHelp(title: "What diagnostics include", detail: "Last 300 events: FPS, frame gaps and SRTLA queues, local send rates, retries and relay ACK timing. No stream keys or chat contents. Local sends do not prove receiver delivery or audio sync.")
                     }
                     }
                 }

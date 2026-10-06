@@ -16,8 +16,7 @@ struct BrowserSourceSettings: View {
             }
             Button("Add browser source") { _ = store.add() }
                 .disabled(locked || !store.canWrite || store.sources.count >= 3)
-            Text("Up to 3 HTTPS widgets. Visuals only—browser audio, logins and interactive pages are not supported. Change before going live. Performance needs device testing.")
-                .font(.caption).foregroundStyle(.secondary)
+            SettingsHelp(title: "Browser source limits", detail: "Up to 3 HTTPS widgets. Visuals only—browser audio, logins and interactive pages are not supported. Change before going live. Performance needs device testing.")
             if let message = store.errorMessage {
                 Text(message).font(.caption).foregroundStyle(.red)
                 Button("Retry loading browser sources") { store.load() }.disabled(locked)
@@ -43,8 +42,7 @@ private struct BrowserSourceEditor: View {
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
                     .keyboardType(.URL)
                     .accessibilityIdentifier("browser-source-url")
-                Text("Widget URLs can contain private tokens. Saved in Keychain, not diagnostics.")
-                    .font(.caption).foregroundStyle(.purple)
+                SettingsHelp(title: "URL privacy", detail: "Widget URLs can contain private tokens. Saved in Keychain, not diagnostics.")
                 Picker("Show in", selection: $source.destination) {
                     ForEach(BrowserOverlayDestination.allCases, id: \.self) { Text($0.rawValue).tag($0) }
                 }
@@ -62,8 +60,7 @@ private struct BrowserSourceEditor: View {
                 LabeledContent("Height") {
                     TextField("Height", value: $source.contentHeight, format: .number).keyboardType(.numberPad)
                 }
-                Text("1–4096 pixels per side. Controls webpage layout, not overlay size. Snapshots use at most 640 pixels per side and 5 updates per second.")
-                    .font(.caption).foregroundStyle(.secondary)
+                SettingsHelp(title: "Viewport size help", detail: "1–4096 pixels per side. Controls webpage layout, not overlay size. Snapshots use at most 640 pixels per side and 5 updates per second.")
             }
             if invalid { Text("Use a valid HTTPS URL and viewport dimensions from 1 to 4096.").foregroundStyle(.red) }
             if let message = store.errorMessage { Text(message).foregroundStyle(.red) }
