@@ -73,6 +73,7 @@ targets:
       - path: NabcamIOS/ConnectionProfiles.swift
       - path: NabcamIOS/BrowserOverlaySources.swift
       - path: NabcamIOS/BrowserOverlayPage.swift
+      - path: NabcamIOS/BrowserOverlayHost.swift
       - path: NabcamIOS/StreamWatermarks.swift
       - path: NabcamIOS/OverlayCorner.swift
       - path: NabcamIOS/OverlayPreferencesStore.swift

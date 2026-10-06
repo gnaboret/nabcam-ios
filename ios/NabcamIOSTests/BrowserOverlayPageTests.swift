@@ -34,10 +34,11 @@ final class BrowserOverlayPageTests: XCTestCase {
         source.contentHeight = 720
         let page = try BrowserOverlayPage(source: source)
         defer { page.stop(); window.isHidden = true }
-        controller.view.addSubview(page.view)
-        let scale = min(controller.view.bounds.width / 1280, controller.view.bounds.height / 720)
-        page.view.transform = CGAffineTransform(scaleX: scale, y: scale)
-        page.view.center = CGPoint(x: controller.view.bounds.midX, y: controller.view.bounds.midY)
+        let host = BrowserOverlayHost(frame: controller.view.bounds)
+        controller.view.addSubview(host)
+        host.attach([page])
+        XCTAssertEqual(page.view.bounds.size, CGSize(width: 1280, height: 720))
+        XCTAssertTrue(host.bounds.contains(page.view.frame))
         page.view.loadHTMLString("""
         <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
         <style>html,body{margin:0;background:transparent}#red{position:absolute;left:0;top:0;width:640px;height:360px;background:#ff0000}
@@ -73,5 +74,12 @@ final class BrowserOverlayPageTests: XCTestCase {
         XCTAssertGreaterThan(pixel(100, 100, 0), 240, "Top-left content should remain red")
         XCTAssertEqual(pixel(400, 200, 3), 0, "Empty widget area must remain transparent")
         XCTAssertGreaterThan(pixel(620, 340, 1), 240, "Full viewport must include bottom-right content")
+        host.frame.size = CGSize(width: 200, height: 400)
+        host.setNeedsLayout()
+        host.layoutIfNeeded()
+        XCTAssertEqual(page.view.bounds.size, CGSize(width: 1280, height: 720), "Changing the preview must not reflow the widget")
+        XCTAssertTrue(host.bounds.contains(page.view.frame))
+        host.attach([])
+        XCTAssertNil(page.view.window)
     }
 }
