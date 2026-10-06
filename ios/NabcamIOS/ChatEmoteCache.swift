@@ -48,6 +48,9 @@ final class ChatEmoteCache: ObservableObject {
                 }
             }
         }
+        // Disconnects and text-only windows must cancel obsolete image work,
+        // rather than letting it occupy the serial loader until its timeout.
+        guard !urls.isEmpty else { stop(); return }
         wanted = urls
         let keep = Set(urls)
         if images.keys.contains(where: { !keep.contains($0) }) {
@@ -92,7 +95,9 @@ final class ChatEmoteCache: ObservableObject {
     func stop() {
         generation += 1
         worker?.cancel(); worker = nil
-        wanted = []; images = [:]; failed = []
+        wanted = []
+        if !images.isEmpty { images = [:] }
+        failed = []
     }
 
     deinit { worker?.cancel(); session.invalidateAndCancel() }

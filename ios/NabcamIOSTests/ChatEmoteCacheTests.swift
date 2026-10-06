@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 @testable import NabcamStorageHost
 
 @MainActor
@@ -20,9 +21,13 @@ final class ChatEmoteCacheTests: XCTestCase {
 
     func testEmptyCacheStopIsIdempotent() {
         let cache = ChatEmoteCache()
+        var changes = 0
+        let observation = cache.$images.dropFirst().sink { _ in changes += 1 }
         cache.update(messages: [])
         cache.stop()
         cache.stop()
         XCTAssertTrue(cache.images.isEmpty)
+        XCTAssertEqual(changes, 0, "Idle chat must not repeatedly invalidate the preview")
+        withExtendedLifetime(observation) { }
     }
 }
