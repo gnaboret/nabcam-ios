@@ -193,8 +193,9 @@ final class SettingsUITests: XCTestCase {
         latencyMenu.tap()
         XCTAssertTrue(app.buttons["2500 ms"].waitForExistence(timeout: 5))
         app.buttons["2500 ms"].tap()
-        XCTAssertTrue(latencyMenu.label.contains("2500 ms"))
         attach("settings-srt-latency", app: app)
+        XCTAssertTrue(latencyMenu.label.replacingOccurrences(of: ",", with: "").contains("2500 ms"),
+                      "Selecting 2500 ms must update the displayed connection latency")
         latencyMenu.tap()
         app.buttons["Use default"].tap()
         XCTAssertTrue(latencyMenu.label.contains("Default"))
