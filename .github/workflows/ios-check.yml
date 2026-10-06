@@ -11,10 +11,15 @@ on:
         description: UI-only rerun for test-only changes (full checks remain the default)
         type: boolean
         default: false
+      inspect_native_run:
+        description: Optional previous run ID to export native test images without rebuilding
+        type: string
+        default: ""
 permissions:
   contents: read
 jobs:
   ios:
+    if: ${{ inputs.inspect_native_run == '' }}
     runs-on: macos-26
     timeout-minutes: 30
     steps:
@@ -126,6 +131,13 @@ jobs:
               assert 'CA92.1' in reasons['NSPrivacyAccessedAPICategoryUserDefaults']
               print(target, 'identity, capture permission text and app privacy manifest verified')
           PY
+      - name: Export native test attachments even after a failure
+        if: always()
+        working-directory: ios
+        run: |
+          if [ -d build/storage-results.xcresult ] && [ ! -d build/receiver-attachments ]; then
+            xcrun xcresulttool export attachments --path build/storage-results.xcresult --output-path build/receiver-attachments
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: nabcam-ios-simulator-not-for-iphone-install
@@ -152,3 +164,25 @@ jobs:
             ios/build/ui-screenshots
             ios/build/ui-results.xcresult
           if-no-files-found: ignore
+  inspect-native-results:
+    if: ${{ inputs.inspect_native_run != '' }}
+    runs-on: macos-26
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Download and export existing native test attachments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT_RUN: ${{ inputs.inspect_native_run }}
+          RESULT_REPO: ${{ github.repository }}
+        run: |
+          case "$RESULT_RUN" in ''|*[!0-9]*) exit 1 ;; esac
+          gh run download "$RESULT_RUN" --repo "$RESULT_REPO" --name keychain-simulator-test-results --dir native-results.xcresult
+          xcrun xcresulttool export attachments --path native-results.xcresult --output-path native-attachments
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-test-attachments
+          path: native-attachments
+          if-no-files-found: error
